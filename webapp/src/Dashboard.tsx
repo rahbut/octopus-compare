@@ -172,19 +172,20 @@ export function Dashboard({ api }: DashboardProps) {
     return aggregateConsumptionByDay(consumptionData);
   }, [consumptionData, timeframe]);
 
+  const allMeters = useMemo(() => {
+    const elec = account?.properties[0]?.electricity_meter_points || [];
+    const gas = account?.properties[0]?.gas_meter_points || [];
+    return [
+      ...elec.map(m => ({ id: m.mpan!, type: 'Electricity' })),
+      ...gas.map(m => ({ id: m.mprn!, type: 'Gas' }))
+    ].filter(m => m.id);
+  }, [account]);
+
   if (loading) return <div className="panel text-center text-secondary">Loading account and tariff data...</div>;
   if (error) return <div className="panel"><h3 style={{ color: 'var(--error-color)' }}>Error</h3><p>{error}</p></div>;
   if (!account) return null;
 
   const property = account.properties[0];
-  const allMeters = useMemo(() => {
-    const elec = property.electricity_meter_points || [];
-    const gas = property.gas_meter_points || [];
-    return [
-      ...elec.map(m => ({ id: m.mpan!, type: 'Electricity' })),
-      ...gas.map(m => ({ id: m.mprn!, type: 'Gas' }))
-    ].filter(m => m.id);
-  }, [property]);
 
   const runComparison = async () => {
     if (!consumptionData.length) return;
