@@ -1,0 +1,8 @@
+# Downloaded Ofgem source XLSX files (large, reproducible via build script)
+OfgemData/.ofgem_cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
