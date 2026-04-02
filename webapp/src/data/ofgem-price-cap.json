@@ -1,0 +1,2542 @@
+{
+  "_meta": {
+    "description": "Ofgem energy price cap rates by region for direct debit customers. Unit rates in p/kWh inc VAT. Standing charges in p/day inc VAT.",
+    "source": "https://www.ofgem.gov.uk/energy-regulation/domestic-and-non-domestic/energy-pricing-rules/energy-price-cap/energy-price-cap-default-tariff-levels",
+    "payment_method": "direct_debit",
+    "generated": "2026-04-02",
+    "regions": {
+      "_A": "Eastern England",
+      "_B": "East Midlands",
+      "_C": "London",
+      "_D": "Merseyside and North Wales",
+      "_E": "West Midlands",
+      "_F": "North East England",
+      "_G": "North West England",
+      "_H": "Southern England",
+      "_J": "South East England",
+      "_K": "South Western England",
+      "_L": "South Wales",
+      "_M": "Yorkshire",
+      "_N": "South Scotland",
+      "_P": "North Scotland"
+    }
+  },
+  "quarters": [
+    {
+      "period_from": "2021-10-01",
+      "period_to": "2022-03-31",
+      "label": "Q4 2021 / Q1 2022",
+      "file_type": "pre_levelised",
+      "regions": {
+        "_G": {
+          "electricity": {
+            "unit_rate_inc_vat": 20.141,
+            "standing_charge_inc_vat": 24.383
+          },
+          "gas": {
+            "unit_rate_inc_vat": 4.0435,
+            "standing_charge_inc_vat": 26.1234
+          }
+        },
+        "_F": {
+          "electricity": {
+            "unit_rate_inc_vat": 20.2078,
+            "standing_charge_inc_vat": 26.46
+          },
+          "gas": {
+            "unit_rate_inc_vat": 3.9548,
+            "standing_charge_inc_vat": 26.1234
+          }
+        },
+        "_M": {
+          "electricity": {
+            "unit_rate_inc_vat": 20.0767,
+            "standing_charge_inc_vat": 26.8253
+          },
+          "gas": {
+            "unit_rate_inc_vat": 3.9827,
+            "standing_charge_inc_vat": 26.1234
+          }
+        },
+        "_P": {
+          "electricity": {
+            "unit_rate_inc_vat": 20.8344,
+            "standing_charge_inc_vat": 27.3949
+          },
+          "gas": {
+            "unit_rate_inc_vat": 4.0106,
+            "standing_charge_inc_vat": 26.1234
+          }
+        },
+        "_H": {
+          "electricity": {
+            "unit_rate_inc_vat": 20.6799,
+            "standing_charge_inc_vat": 24.1126
+          },
+          "gas": {
+            "unit_rate_inc_vat": 4.1685,
+            "standing_charge_inc_vat": 26.1234
+          }
+        },
+        "_N": {
+          "electricity": {
+            "unit_rate_inc_vat": 20.3917,
+            "standing_charge_inc_vat": 24.8663
+          },
+          "gas": {
+            "unit_rate_inc_vat": 4.0105,
+            "standing_charge_inc_vat": 26.1234
+          }
+        },
+        "_D": {
+          "electricity": {
+            "unit_rate_inc_vat": 21.9961,
+            "standing_charge_inc_vat": 23.4999
+          },
+          "gas": {
+            "unit_rate_inc_vat": 4.0656,
+            "standing_charge_inc_vat": 26.1234
+          }
+        },
+        "_C": {
+          "electricity": {
+            "unit_rate_inc_vat": 20.7727,
+            "standing_charge_inc_vat": 23.3071
+          },
+          "gas": {
+            "unit_rate_inc_vat": 4.1872,
+            "standing_charge_inc_vat": 26.1234
+          }
+        },
+        "_J": {
+          "electricity": {
+            "unit_rate_inc_vat": 21.5575,
+            "standing_charge_inc_vat": 24.0378
+          },
+          "gas": {
+            "unit_rate_inc_vat": 4.0531,
+            "standing_charge_inc_vat": 26.1234
+          }
+        },
+        "_A": {
+          "electricity": {
+            "unit_rate_inc_vat": 20.871,
+            "standing_charge_inc_vat": 24.0177
+          },
+          "gas": {
+            "unit_rate_inc_vat": 4.0559,
+            "standing_charge_inc_vat": 26.1234
+          }
+        },
+        "_B": {
+          "electricity": {
+            "unit_rate_inc_vat": 20.3168,
+            "standing_charge_inc_vat": 23.7703
+          },
+          "gas": {
+            "unit_rate_inc_vat": 3.9875,
+            "standing_charge_inc_vat": 26.1234
+          }
+        },
+        "_E": {
+          "electricity": {
+            "unit_rate_inc_vat": 20.5919,
+            "standing_charge_inc_vat": 25.0936
+          },
+          "gas": {
+            "unit_rate_inc_vat": 4.047,
+            "standing_charge_inc_vat": 26.1234
+          }
+        },
+        "_K": {
+          "electricity": {
+            "unit_rate_inc_vat": 21.6073,
+            "standing_charge_inc_vat": 25.6632
+          },
+          "gas": {
+            "unit_rate_inc_vat": 4.197,
+            "standing_charge_inc_vat": 26.1234
+          }
+        },
+        "_L": {
+          "electricity": {
+            "unit_rate_inc_vat": 21.1802,
+            "standing_charge_inc_vat": 24.8663
+          },
+          "gas": {
+            "unit_rate_inc_vat": 4.1743,
+            "standing_charge_inc_vat": 26.1234
+          }
+        }
+      }
+    },
+    {
+      "period_from": "2022-04-01",
+      "period_to": "2022-09-30",
+      "label": "Q2/Q3 2022",
+      "file_type": "pre_levelised",
+      "regions": {
+        "_G": {
+          "electricity": {
+            "unit_rate_inc_vat": 28.0204,
+            "standing_charge_inc_vat": 42.2416
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.3427,
+            "standing_charge_inc_vat": 27.2195
+          }
+        },
+        "_F": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.091,
+            "standing_charge_inc_vat": 48.9127
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.226,
+            "standing_charge_inc_vat": 27.2195
+          }
+        },
+        "_M": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.3583,
+            "standing_charge_inc_vat": 48.5273
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.2804,
+            "standing_charge_inc_vat": 27.2195
+          }
+        },
+        "_P": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.906,
+            "standing_charge_inc_vat": 50.0548
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.3364,
+            "standing_charge_inc_vat": 27.2195
+          }
+        },
+        "_H": {
+          "electricity": {
+            "unit_rate_inc_vat": 28.455,
+            "standing_charge_inc_vat": 43.3952
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.4799,
+            "standing_charge_inc_vat": 27.2195
+          }
+        },
+        "_N": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.8379,
+            "standing_charge_inc_vat": 49.6463
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.3362,
+            "standing_charge_inc_vat": 27.2195
+          }
+        },
+        "_D": {
+          "electricity": {
+            "unit_rate_inc_vat": 29.5843,
+            "standing_charge_inc_vat": 47.5808
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.3655,
+            "standing_charge_inc_vat": 27.2195
+          }
+        },
+        "_C": {
+          "electricity": {
+            "unit_rate_inc_vat": 29.6327,
+            "standing_charge_inc_vat": 32.1415
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.5173,
+            "standing_charge_inc_vat": 27.2195
+          }
+        },
+        "_J": {
+          "electricity": {
+            "unit_rate_inc_vat": 29.4847,
+            "standing_charge_inc_vat": 41.6605
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.3195,
+            "standing_charge_inc_vat": 27.2195
+          }
+        },
+        "_A": {
+          "electricity": {
+            "unit_rate_inc_vat": 29.2401,
+            "standing_charge_inc_vat": 37.9179
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.344,
+            "standing_charge_inc_vat": 27.2195
+          }
+        },
+        "_B": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.6275,
+            "standing_charge_inc_vat": 44.7501
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.2825,
+            "standing_charge_inc_vat": 27.2195
+          }
+        },
+        "_E": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.8653,
+            "standing_charge_inc_vat": 48.1274
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.3673,
+            "standing_charge_inc_vat": 27.2195
+          }
+        },
+        "_K": {
+          "electricity": {
+            "unit_rate_inc_vat": 28.4086,
+            "standing_charge_inc_vat": 51.6255
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.4764,
+            "standing_charge_inc_vat": 27.2195
+          }
+        },
+        "_L": {
+          "electricity": {
+            "unit_rate_inc_vat": 28.2894,
+            "standing_charge_inc_vat": 48.1504
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.444,
+            "standing_charge_inc_vat": 27.2195
+          }
+        }
+      }
+    },
+    {
+      "period_from": "2022-10-01",
+      "period_to": "2022-12-31",
+      "label": "Q4 2022",
+      "file_type": "pre_levelised",
+      "regions": {
+        "_G": {
+          "electricity": {
+            "unit_rate_inc_vat": 51.3243,
+            "standing_charge_inc_vat": 43.26
+          },
+          "gas": {
+            "unit_rate_inc_vat": 14.7545,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_F": {
+          "electricity": {
+            "unit_rate_inc_vat": 50.088,
+            "standing_charge_inc_vat": 49.9311
+          },
+          "gas": {
+            "unit_rate_inc_vat": 14.6273,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_M": {
+          "electricity": {
+            "unit_rate_inc_vat": 50.8772,
+            "standing_charge_inc_vat": 49.5456
+          },
+          "gas": {
+            "unit_rate_inc_vat": 14.6709,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_P": {
+          "electricity": {
+            "unit_rate_inc_vat": 50.9165,
+            "standing_charge_inc_vat": 51.0732
+          },
+          "gas": {
+            "unit_rate_inc_vat": 14.7042,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_H": {
+          "electricity": {
+            "unit_rate_inc_vat": 52.0742,
+            "standing_charge_inc_vat": 44.4136
+          },
+          "gas": {
+            "unit_rate_inc_vat": 14.8846,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_N": {
+          "electricity": {
+            "unit_rate_inc_vat": 51.6112,
+            "standing_charge_inc_vat": 50.6647
+          },
+          "gas": {
+            "unit_rate_inc_vat": 14.7039,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_D": {
+          "electricity": {
+            "unit_rate_inc_vat": 53.8311,
+            "standing_charge_inc_vat": 48.5963
+          },
+          "gas": {
+            "unit_rate_inc_vat": 14.7706,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_C": {
+          "electricity": {
+            "unit_rate_inc_vat": 53.6455,
+            "standing_charge_inc_vat": 33.157
+          },
+          "gas": {
+            "unit_rate_inc_vat": 14.937,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_J": {
+          "electricity": {
+            "unit_rate_inc_vat": 53.1625,
+            "standing_charge_inc_vat": 42.6789
+          },
+          "gas": {
+            "unit_rate_inc_vat": 14.7226,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_A": {
+          "electricity": {
+            "unit_rate_inc_vat": 52.9051,
+            "standing_charge_inc_vat": 38.9363
+          },
+          "gas": {
+            "unit_rate_inc_vat": 14.7368,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_B": {
+          "electricity": {
+            "unit_rate_inc_vat": 50.8664,
+            "standing_charge_inc_vat": 45.7685
+          },
+          "gas": {
+            "unit_rate_inc_vat": 14.6645,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_E": {
+          "electricity": {
+            "unit_rate_inc_vat": 51.575,
+            "standing_charge_inc_vat": 49.1458
+          },
+          "gas": {
+            "unit_rate_inc_vat": 14.7613,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_K": {
+          "electricity": {
+            "unit_rate_inc_vat": 51.7081,
+            "standing_charge_inc_vat": 52.6438
+          },
+          "gas": {
+            "unit_rate_inc_vat": 14.8533,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_L": {
+          "electricity": {
+            "unit_rate_inc_vat": 51.8212,
+            "standing_charge_inc_vat": 49.1688
+          },
+          "gas": {
+            "unit_rate_inc_vat": 14.8216,
+            "standing_charge_inc_vat": 28.4852
+          }
+        }
+      }
+    },
+    {
+      "period_from": "2023-01-01",
+      "period_to": "2023-03-31",
+      "label": "Q1 2023",
+      "file_type": "pre_levelised",
+      "regions": {
+        "_G": {
+          "electricity": {
+            "unit_rate_inc_vat": 66.7617,
+            "standing_charge_inc_vat": 43.26
+          },
+          "gas": {
+            "unit_rate_inc_vat": 17.0728,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_F": {
+          "electricity": {
+            "unit_rate_inc_vat": 65.3036,
+            "standing_charge_inc_vat": 49.9311
+          },
+          "gas": {
+            "unit_rate_inc_vat": 16.9456,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_M": {
+          "electricity": {
+            "unit_rate_inc_vat": 66.4386,
+            "standing_charge_inc_vat": 49.5456
+          },
+          "gas": {
+            "unit_rate_inc_vat": 16.9892,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_P": {
+          "electricity": {
+            "unit_rate_inc_vat": 66.1995,
+            "standing_charge_inc_vat": 51.0732
+          },
+          "gas": {
+            "unit_rate_inc_vat": 17.0225,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_H": {
+          "electricity": {
+            "unit_rate_inc_vat": 67.7115,
+            "standing_charge_inc_vat": 44.4136
+          },
+          "gas": {
+            "unit_rate_inc_vat": 17.2029,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_N": {
+          "electricity": {
+            "unit_rate_inc_vat": 67.3456,
+            "standing_charge_inc_vat": 50.6647
+          },
+          "gas": {
+            "unit_rate_inc_vat": 17.0222,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_D": {
+          "electricity": {
+            "unit_rate_inc_vat": 69.8805,
+            "standing_charge_inc_vat": 48.5963
+          },
+          "gas": {
+            "unit_rate_inc_vat": 17.0889,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_C": {
+          "electricity": {
+            "unit_rate_inc_vat": 69.51,
+            "standing_charge_inc_vat": 33.157
+          },
+          "gas": {
+            "unit_rate_inc_vat": 17.2553,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_J": {
+          "electricity": {
+            "unit_rate_inc_vat": 68.8329,
+            "standing_charge_inc_vat": 42.6789
+          },
+          "gas": {
+            "unit_rate_inc_vat": 17.0409,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_A": {
+          "electricity": {
+            "unit_rate_inc_vat": 68.5667,
+            "standing_charge_inc_vat": 38.9363
+          },
+          "gas": {
+            "unit_rate_inc_vat": 17.0551,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_B": {
+          "electricity": {
+            "unit_rate_inc_vat": 66.2398,
+            "standing_charge_inc_vat": 45.7685
+          },
+          "gas": {
+            "unit_rate_inc_vat": 16.9828,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_E": {
+          "electricity": {
+            "unit_rate_inc_vat": 67.2627,
+            "standing_charge_inc_vat": 49.1458
+          },
+          "gas": {
+            "unit_rate_inc_vat": 17.0797,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_K": {
+          "electricity": {
+            "unit_rate_inc_vat": 67.1306,
+            "standing_charge_inc_vat": 52.6438
+          },
+          "gas": {
+            "unit_rate_inc_vat": 17.1716,
+            "standing_charge_inc_vat": 28.4852
+          }
+        },
+        "_L": {
+          "electricity": {
+            "unit_rate_inc_vat": 67.3992,
+            "standing_charge_inc_vat": 49.1688
+          },
+          "gas": {
+            "unit_rate_inc_vat": 17.1399,
+            "standing_charge_inc_vat": 28.4852
+          }
+        }
+      }
+    },
+    {
+      "period_from": "2023-04-01",
+      "period_to": "2023-06-30",
+      "label": "Q2 2023",
+      "file_type": "pre_levelised",
+      "regions": {
+        "_G": {
+          "electricity": {
+            "unit_rate_inc_vat": 50.1168,
+            "standing_charge_inc_vat": 51.4155
+          },
+          "gas": {
+            "unit_rate_inc_vat": 12.6125,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_F": {
+          "electricity": {
+            "unit_rate_inc_vat": 49.3229,
+            "standing_charge_inc_vat": 57.0308
+          },
+          "gas": {
+            "unit_rate_inc_vat": 12.5297,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_M": {
+          "electricity": {
+            "unit_rate_inc_vat": 49.7629,
+            "standing_charge_inc_vat": 55.6011
+          },
+          "gas": {
+            "unit_rate_inc_vat": 12.5389,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_P": {
+          "electricity": {
+            "unit_rate_inc_vat": 49.9573,
+            "standing_charge_inc_vat": 58.9784
+          },
+          "gas": {
+            "unit_rate_inc_vat": 12.563,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_H": {
+          "electricity": {
+            "unit_rate_inc_vat": 50.9162,
+            "standing_charge_inc_vat": 49.5974
+          },
+          "gas": {
+            "unit_rate_inc_vat": 12.7068,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_N": {
+          "electricity": {
+            "unit_rate_inc_vat": 50.3072,
+            "standing_charge_inc_vat": 61.6681
+          },
+          "gas": {
+            "unit_rate_inc_vat": 12.5629,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_D": {
+          "electricity": {
+            "unit_rate_inc_vat": 52.1606,
+            "standing_charge_inc_vat": 61.8205
+          },
+          "gas": {
+            "unit_rate_inc_vat": 12.6434,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_C": {
+          "electricity": {
+            "unit_rate_inc_vat": 52.083,
+            "standing_charge_inc_vat": 38.1826
+          },
+          "gas": {
+            "unit_rate_inc_vat": 12.611,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_J": {
+          "electricity": {
+            "unit_rate_inc_vat": 51.5733,
+            "standing_charge_inc_vat": 47.2097
+          },
+          "gas": {
+            "unit_rate_inc_vat": 12.638,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_A": {
+          "electricity": {
+            "unit_rate_inc_vat": 51.3806,
+            "standing_charge_inc_vat": 43.657
+          },
+          "gas": {
+            "unit_rate_inc_vat": 12.4983,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_B": {
+          "electricity": {
+            "unit_rate_inc_vat": 49.7985,
+            "standing_charge_inc_vat": 50.3079
+          },
+          "gas": {
+            "unit_rate_inc_vat": 12.4786,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_E": {
+          "electricity": {
+            "unit_rate_inc_vat": 50.209,
+            "standing_charge_inc_vat": 53.9642
+          },
+          "gas": {
+            "unit_rate_inc_vat": 12.5313,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_K": {
+          "electricity": {
+            "unit_rate_inc_vat": 50.1873,
+            "standing_charge_inc_vat": 58.2793
+          },
+          "gas": {
+            "unit_rate_inc_vat": 12.8127,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_L": {
+          "electricity": {
+            "unit_rate_inc_vat": 50.6808,
+            "standing_charge_inc_vat": 53.8262
+          },
+          "gas": {
+            "unit_rate_inc_vat": 12.7635,
+            "standing_charge_inc_vat": 29.1123
+          }
+        }
+      }
+    },
+    {
+      "period_from": "2023-07-01",
+      "period_to": "2023-09-30",
+      "label": "Q3 2023",
+      "file_type": "pre_levelised",
+      "regions": {
+        "_G": {
+          "electricity": {
+            "unit_rate_inc_vat": 29.9355,
+            "standing_charge_inc_vat": 51.4155
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.513,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_F": {
+          "electricity": {
+            "unit_rate_inc_vat": 29.2872,
+            "standing_charge_inc_vat": 57.0308
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.4302,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_M": {
+          "electricity": {
+            "unit_rate_inc_vat": 29.2628,
+            "standing_charge_inc_vat": 55.6011
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.4393,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_P": {
+          "electricity": {
+            "unit_rate_inc_vat": 29.9687,
+            "standing_charge_inc_vat": 58.9784
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.4635,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_H": {
+          "electricity": {
+            "unit_rate_inc_vat": 30.2952,
+            "standing_charge_inc_vat": 49.5974
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.6073,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_N": {
+          "electricity": {
+            "unit_rate_inc_vat": 29.6672,
+            "standing_charge_inc_vat": 61.6681
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.4634,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_D": {
+          "electricity": {
+            "unit_rate_inc_vat": 31.0963,
+            "standing_charge_inc_vat": 61.8205
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.5439,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_C": {
+          "electricity": {
+            "unit_rate_inc_vat": 31.1914,
+            "standing_charge_inc_vat": 38.1826
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.5114,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_J": {
+          "electricity": {
+            "unit_rate_inc_vat": 30.8995,
+            "standing_charge_inc_vat": 47.2097
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.5385,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_A": {
+          "electricity": {
+            "unit_rate_inc_vat": 30.7203,
+            "standing_charge_inc_vat": 43.657
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.3988,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_B": {
+          "electricity": {
+            "unit_rate_inc_vat": 29.4823,
+            "standing_charge_inc_vat": 50.3079
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.3791,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_E": {
+          "electricity": {
+            "unit_rate_inc_vat": 29.6076,
+            "standing_charge_inc_vat": 53.9642
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.4317,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_K": {
+          "electricity": {
+            "unit_rate_inc_vat": 29.9477,
+            "standing_charge_inc_vat": 58.2793
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.7131,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_L": {
+          "electricity": {
+            "unit_rate_inc_vat": 30.2227,
+            "standing_charge_inc_vat": 53.8262
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.664,
+            "standing_charge_inc_vat": 29.1123
+          }
+        }
+      }
+    },
+    {
+      "period_from": "2023-10-01",
+      "period_to": "2023-12-31",
+      "label": "Q4 2023",
+      "file_type": "pre_levelised",
+      "regions": {
+        "_G": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.2119,
+            "standing_charge_inc_vat": 51.8125
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.8984,
+            "standing_charge_inc_vat": 29.6186
+          }
+        },
+        "_F": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.5765,
+            "standing_charge_inc_vat": 57.4566
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.816,
+            "standing_charge_inc_vat": 29.6215
+          }
+        },
+        "_M": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.52,
+            "standing_charge_inc_vat": 56.024
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.8251,
+            "standing_charge_inc_vat": 29.6215
+          }
+        },
+        "_P": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.2624,
+            "standing_charge_inc_vat": 59.3984
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.8491,
+            "standing_charge_inc_vat": 29.6215
+          }
+        },
+        "_H": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.5107,
+            "standing_charge_inc_vat": 49.9858
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.9923,
+            "standing_charge_inc_vat": 29.6158
+          }
+        },
+        "_N": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.8841,
+            "standing_charge_inc_vat": 62.0996
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.849,
+            "standing_charge_inc_vat": 29.6215
+          }
+        },
+        "_D": {
+          "electricity": {
+            "unit_rate_inc_vat": 28.2589,
+            "standing_charge_inc_vat": 62.2262
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.9291,
+            "standing_charge_inc_vat": 29.6186
+          }
+        },
+        "_C": {
+          "electricity": {
+            "unit_rate_inc_vat": 28.4282,
+            "standing_charge_inc_vat": 38.5163
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.8968,
+            "standing_charge_inc_vat": 29.6186
+          }
+        },
+        "_J": {
+          "electricity": {
+            "unit_rate_inc_vat": 28.0966,
+            "standing_charge_inc_vat": 47.5808
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.9237,
+            "standing_charge_inc_vat": 29.6186
+          }
+        },
+        "_A": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.932,
+            "standing_charge_inc_vat": 44.0195
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.7847,
+            "standing_charge_inc_vat": 29.6244
+          }
+        },
+        "_B": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.7598,
+            "standing_charge_inc_vat": 50.7078
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.765,
+            "standing_charge_inc_vat": 29.6244
+          }
+        },
+        "_E": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.8526,
+            "standing_charge_inc_vat": 54.3756
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.8175,
+            "standing_charge_inc_vat": 29.6215
+          }
+        },
+        "_K": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.1848,
+            "standing_charge_inc_vat": 58.6964
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.0977,
+            "standing_charge_inc_vat": 29.61
+          }
+        },
+        "_L": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.4484,
+            "standing_charge_inc_vat": 54.226
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.0487,
+            "standing_charge_inc_vat": 29.6129
+          }
+        }
+      }
+    },
+    {
+      "period_from": "2024-01-01",
+      "period_to": "2024-03-31",
+      "label": "Q1 2024",
+      "file_type": "pre_levelised",
+      "regions": {
+        "_G": {
+          "electricity": {
+            "unit_rate_inc_vat": 28.4411,
+            "standing_charge_inc_vat": 51.7952
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.423,
+            "standing_charge_inc_vat": 29.5985
+          }
+        },
+        "_F": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.805,
+            "standing_charge_inc_vat": 57.4364
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.3406,
+            "standing_charge_inc_vat": 29.6014
+          }
+        },
+        "_M": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.7884,
+            "standing_charge_inc_vat": 56.001
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.3496,
+            "standing_charge_inc_vat": 29.6014
+          }
+        },
+        "_P": {
+          "electricity": {
+            "unit_rate_inc_vat": 28.4767,
+            "standing_charge_inc_vat": 59.3753
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.3736,
+            "standing_charge_inc_vat": 29.6014
+          }
+        },
+        "_H": {
+          "electricity": {
+            "unit_rate_inc_vat": 28.7907,
+            "standing_charge_inc_vat": 49.9656
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.517,
+            "standing_charge_inc_vat": 29.5956
+          }
+        },
+        "_N": {
+          "electricity": {
+            "unit_rate_inc_vat": 28.1569,
+            "standing_charge_inc_vat": 62.0795
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.3735,
+            "standing_charge_inc_vat": 29.6014
+          }
+        },
+        "_D": {
+          "electricity": {
+            "unit_rate_inc_vat": 29.568,
+            "standing_charge_inc_vat": 62.206
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.4538,
+            "standing_charge_inc_vat": 29.5956
+          }
+        },
+        "_C": {
+          "electricity": {
+            "unit_rate_inc_vat": 29.7279,
+            "standing_charge_inc_vat": 38.5019
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.4215,
+            "standing_charge_inc_vat": 29.5985
+          }
+        },
+        "_J": {
+          "electricity": {
+            "unit_rate_inc_vat": 29.3817,
+            "standing_charge_inc_vat": 47.5607
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.4484,
+            "standing_charge_inc_vat": 29.5985
+          }
+        },
+        "_A": {
+          "electricity": {
+            "unit_rate_inc_vat": 29.2154,
+            "standing_charge_inc_vat": 44.0022
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.3093,
+            "standing_charge_inc_vat": 29.6014
+          }
+        },
+        "_B": {
+          "electricity": {
+            "unit_rate_inc_vat": 28.0174,
+            "standing_charge_inc_vat": 50.6877
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.2896,
+            "standing_charge_inc_vat": 29.6042
+          }
+        },
+        "_E": {
+          "electricity": {
+            "unit_rate_inc_vat": 28.1241,
+            "standing_charge_inc_vat": 54.3555
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.3421,
+            "standing_charge_inc_vat": 29.6014
+          }
+        },
+        "_K": {
+          "electricity": {
+            "unit_rate_inc_vat": 28.4252,
+            "standing_charge_inc_vat": 58.6763
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.6224,
+            "standing_charge_inc_vat": 29.5899
+          }
+        },
+        "_L": {
+          "electricity": {
+            "unit_rate_inc_vat": 28.7077,
+            "standing_charge_inc_vat": 54.2059
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.5734,
+            "standing_charge_inc_vat": 29.5927
+          }
+        }
+      }
+    },
+    {
+      "period_from": "2024-04-01",
+      "period_to": "2024-06-30",
+      "label": "Q2 2024",
+      "file_type": "annex9",
+      "regions": {
+        "_G": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.6655,
+            "standing_charge_inc_vat": 51.1853
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.9609,
+            "standing_charge_inc_vat": 31.6237
+          }
+        },
+        "_F": {
+          "electricity": {
+            "unit_rate_inc_vat": 23.355,
+            "standing_charge_inc_vat": 71.2044
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.0276,
+            "standing_charge_inc_vat": 31.5834
+          }
+        },
+        "_M": {
+          "electricity": {
+            "unit_rate_inc_vat": 23.355,
+            "standing_charge_inc_vat": 67.4359
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.0149,
+            "standing_charge_inc_vat": 31.5604
+          }
+        },
+        "_P": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.9575,
+            "standing_charge_inc_vat": 61.0956
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.9588,
+            "standing_charge_inc_vat": 31.5834
+          }
+        },
+        "_H": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.6567,
+            "standing_charge_inc_vat": 63.3308
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.1209,
+            "standing_charge_inc_vat": 30.7751
+          }
+        },
+        "_N": {
+          "electricity": {
+            "unit_rate_inc_vat": 23.9749,
+            "standing_charge_inc_vat": 63.3078
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.9588,
+            "standing_charge_inc_vat": 31.6697
+          }
+        },
+        "_D": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.4198,
+            "standing_charge_inc_vat": 67.0418
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.014,
+            "standing_charge_inc_vat": 31.8941
+          }
+        },
+        "_C": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.7209,
+            "standing_charge_inc_vat": 40.7889
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.1113,
+            "standing_charge_inc_vat": 32.0437
+          }
+        },
+        "_J": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.2928,
+            "standing_charge_inc_vat": 56.9014
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.9701,
+            "standing_charge_inc_vat": 30.9419
+          }
+        },
+        "_A": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.2552,
+            "standing_charge_inc_vat": 49.9167
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.9638,
+            "standing_charge_inc_vat": 31.011
+          }
+        },
+        "_B": {
+          "electricity": {
+            "unit_rate_inc_vat": 23.7723,
+            "standing_charge_inc_vat": 56.001
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.8986,
+            "standing_charge_inc_vat": 31.1088
+          }
+        },
+        "_E": {
+          "electricity": {
+            "unit_rate_inc_vat": 23.8391,
+            "standing_charge_inc_vat": 62.7267
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.0011,
+            "standing_charge_inc_vat": 31.454
+          }
+        },
+        "_K": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.2086,
+            "standing_charge_inc_vat": 67.1856
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.3261,
+            "standing_charge_inc_vat": 30.9736
+          }
+        },
+        "_L": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.5148,
+            "standing_charge_inc_vat": 63.256
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.2485,
+            "standing_charge_inc_vat": 31.7474
+          }
+        }
+      }
+    },
+    {
+      "period_from": "2024-07-01",
+      "period_to": "2024-09-30",
+      "label": "Q3 2024",
+      "file_type": "annex9",
+      "regions": {
+        "_G": {
+          "electricity": {
+            "unit_rate_inc_vat": 22.5862,
+            "standing_charge_inc_vat": 51.1882
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.3988,
+            "standing_charge_inc_vat": 31.5949
+          }
+        },
+        "_F": {
+          "electricity": {
+            "unit_rate_inc_vat": 21.2798,
+            "standing_charge_inc_vat": 71.2216
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.4655,
+            "standing_charge_inc_vat": 31.5575
+          }
+        },
+        "_M": {
+          "electricity": {
+            "unit_rate_inc_vat": 21.2164,
+            "standing_charge_inc_vat": 67.4532
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.4529,
+            "standing_charge_inc_vat": 31.5345
+          }
+        },
+        "_P": {
+          "electricity": {
+            "unit_rate_inc_vat": 22.8971,
+            "standing_charge_inc_vat": 61.1186
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.3967,
+            "standing_charge_inc_vat": 31.5834
+          }
+        },
+        "_H": {
+          "electricity": {
+            "unit_rate_inc_vat": 22.4947,
+            "standing_charge_inc_vat": 63.3596
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.5589,
+            "standing_charge_inc_vat": 30.7808
+          }
+        },
+        "_N": {
+          "electricity": {
+            "unit_rate_inc_vat": 21.8268,
+            "standing_charge_inc_vat": 63.3279
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.3967,
+            "standing_charge_inc_vat": 31.6553
+          }
+        },
+        "_D": {
+          "electricity": {
+            "unit_rate_inc_vat": 23.2253,
+            "standing_charge_inc_vat": 67.0533
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.452,
+            "standing_charge_inc_vat": 31.8682
+          }
+        },
+        "_C": {
+          "electricity": {
+            "unit_rate_inc_vat": 23.5278,
+            "standing_charge_inc_vat": 40.7918
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.5492,
+            "standing_charge_inc_vat": 32.0293
+          }
+        },
+        "_J": {
+          "electricity": {
+            "unit_rate_inc_vat": 23.1312,
+            "standing_charge_inc_vat": 56.9301
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.4081,
+            "standing_charge_inc_vat": 30.9419
+          }
+        },
+        "_A": {
+          "electricity": {
+            "unit_rate_inc_vat": 23.0837,
+            "standing_charge_inc_vat": 49.9368
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.4017,
+            "standing_charge_inc_vat": 31.011
+          }
+        },
+        "_B": {
+          "electricity": {
+            "unit_rate_inc_vat": 21.6476,
+            "standing_charge_inc_vat": 56.0182
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.3365,
+            "standing_charge_inc_vat": 31.103
+          }
+        },
+        "_E": {
+          "electricity": {
+            "unit_rate_inc_vat": 21.6869,
+            "standing_charge_inc_vat": 62.7468
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.4391,
+            "standing_charge_inc_vat": 31.4367
+          }
+        },
+        "_K": {
+          "electricity": {
+            "unit_rate_inc_vat": 22.0984,
+            "standing_charge_inc_vat": 67.2144
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.7641,
+            "standing_charge_inc_vat": 30.9678
+          }
+        },
+        "_L": {
+          "electricity": {
+            "unit_rate_inc_vat": 22.3708,
+            "standing_charge_inc_vat": 63.2704
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.6865,
+            "standing_charge_inc_vat": 31.7273
+          }
+        }
+      }
+    },
+    {
+      "period_from": "2024-10-01",
+      "period_to": "2024-12-31",
+      "label": "Q4 2024",
+      "file_type": "annex9",
+      "regions": {
+        "_G": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.012,
+            "standing_charge_inc_vat": 52.0368
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.158,
+            "standing_charge_inc_vat": 31.7618
+          }
+        },
+        "_F": {
+          "electricity": {
+            "unit_rate_inc_vat": 23.1857,
+            "standing_charge_inc_vat": 72.1019
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.2248,
+            "standing_charge_inc_vat": 31.7359
+          }
+        },
+        "_M": {
+          "electricity": {
+            "unit_rate_inc_vat": 23.5068,
+            "standing_charge_inc_vat": 68.319
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.2122,
+            "standing_charge_inc_vat": 31.7273
+          }
+        },
+        "_P": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.9555,
+            "standing_charge_inc_vat": 61.9816
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.1558,
+            "standing_charge_inc_vat": 31.7618
+          }
+        },
+        "_H": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.6171,
+            "standing_charge_inc_vat": 64.2801
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.3181,
+            "standing_charge_inc_vat": 31.3044
+          }
+        },
+        "_N": {
+          "electricity": {
+            "unit_rate_inc_vat": 23.9559,
+            "standing_charge_inc_vat": 64.1737
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.1559,
+            "standing_charge_inc_vat": 31.7963
+          }
+        },
+        "_D": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.3866,
+            "standing_charge_inc_vat": 67.8904
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.2111,
+            "standing_charge_inc_vat": 31.9171
+          }
+        },
+        "_C": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.685,
+            "standing_charge_inc_vat": 41.5886
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.3085,
+            "standing_charge_inc_vat": 32.0005
+          }
+        },
+        "_J": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.2352,
+            "standing_charge_inc_vat": 57.8392
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.1673,
+            "standing_charge_inc_vat": 31.3936
+          }
+        },
+        "_A": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.2102,
+            "standing_charge_inc_vat": 50.843
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.1609,
+            "standing_charge_inc_vat": 31.4338
+          }
+        },
+        "_B": {
+          "electricity": {
+            "unit_rate_inc_vat": 23.7679,
+            "standing_charge_inc_vat": 56.9014
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.0957,
+            "standing_charge_inc_vat": 31.4856
+          }
+        },
+        "_E": {
+          "electricity": {
+            "unit_rate_inc_vat": 23.8316,
+            "standing_charge_inc_vat": 63.6156
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.1982,
+            "standing_charge_inc_vat": 31.6726
+          }
+        },
+        "_K": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.1842,
+            "standing_charge_inc_vat": 68.1205
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.5235,
+            "standing_charge_inc_vat": 31.4022
+          }
+        },
+        "_L": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.4928,
+            "standing_charge_inc_vat": 64.119
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.446,
+            "standing_charge_inc_vat": 31.8251
+          }
+        }
+      }
+    },
+    {
+      "period_from": "2025-01-01",
+      "period_to": "2025-03-31",
+      "label": "Q1 2025",
+      "file_type": "annex9",
+      "regions": {
+        "_G": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.3555,
+            "standing_charge_inc_vat": 52.0282
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.2569,
+            "standing_charge_inc_vat": 31.7532
+          }
+        },
+        "_F": {
+          "electricity": {
+            "unit_rate_inc_vat": 23.5122,
+            "standing_charge_inc_vat": 72.0904
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.3236,
+            "standing_charge_inc_vat": 31.7301
+          }
+        },
+        "_M": {
+          "electricity": {
+            "unit_rate_inc_vat": 23.8635,
+            "standing_charge_inc_vat": 68.3047
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.3109,
+            "standing_charge_inc_vat": 31.7186
+          }
+        },
+        "_P": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.2833,
+            "standing_charge_inc_vat": 61.9673
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.2547,
+            "standing_charge_inc_vat": 31.7474
+          }
+        },
+        "_H": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.9785,
+            "standing_charge_inc_vat": 64.2658
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.417,
+            "standing_charge_inc_vat": 31.2958
+          }
+        },
+        "_N": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.3126,
+            "standing_charge_inc_vat": 64.1593
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.2548,
+            "standing_charge_inc_vat": 31.7848
+          }
+        },
+        "_D": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.7582,
+            "standing_charge_inc_vat": 67.876
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.31,
+            "standing_charge_inc_vat": 31.9085
+          }
+        },
+        "_C": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.0576,
+            "standing_charge_inc_vat": 41.5656
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.4074,
+            "standing_charge_inc_vat": 31.989
+          }
+        },
+        "_J": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.5956,
+            "standing_charge_inc_vat": 57.8305
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.2661,
+            "standing_charge_inc_vat": 31.3849
+          }
+        },
+        "_A": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.575,
+            "standing_charge_inc_vat": 50.8373
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.2598,
+            "standing_charge_inc_vat": 31.4252
+          }
+        },
+        "_B": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.1168,
+            "standing_charge_inc_vat": 56.8899
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.1946,
+            "standing_charge_inc_vat": 31.477
+          }
+        },
+        "_E": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.19,
+            "standing_charge_inc_vat": 63.6041
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.2971,
+            "standing_charge_inc_vat": 31.6668
+          }
+        },
+        "_K": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.529,
+            "standing_charge_inc_vat": 68.1062
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.6224,
+            "standing_charge_inc_vat": 31.3936
+          }
+        },
+        "_L": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.8498,
+            "standing_charge_inc_vat": 64.0989
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.5448,
+            "standing_charge_inc_vat": 31.8164
+          }
+        }
+      }
+    },
+    {
+      "period_from": "2025-04-01",
+      "period_to": "2025-06-30",
+      "label": "Q2 2025",
+      "file_type": "annex9",
+      "regions": {
+        "_G": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.9307,
+            "standing_charge_inc_vat": 51.309
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.9593,
+            "standing_charge_inc_vat": 32.7514
+          }
+        },
+        "_F": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.2412,
+            "standing_charge_inc_vat": 59.8327
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.9382,
+            "standing_charge_inc_vat": 32.737
+          }
+        },
+        "_M": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.1853,
+            "standing_charge_inc_vat": 58.636
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.9591,
+            "standing_charge_inc_vat": 32.7226
+          }
+        },
+        "_P": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.9874,
+            "standing_charge_inc_vat": 60.8712
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.9245,
+            "standing_charge_inc_vat": 32.7571
+          }
+        },
+        "_H": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.24,
+            "standing_charge_inc_vat": 45.127
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.0772,
+            "standing_charge_inc_vat": 32.3601
+          }
+        },
+        "_N": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.8239,
+            "standing_charge_inc_vat": 56.5015
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.9245,
+            "standing_charge_inc_vat": 32.783
+          }
+        },
+        "_D": {
+          "electricity": {
+            "unit_rate_inc_vat": 28.5004,
+            "standing_charge_inc_vat": 69.5388
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.9915,
+            "standing_charge_inc_vat": 32.8895
+          }
+        },
+        "_C": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.4796,
+            "standing_charge_inc_vat": 46.1971
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.0724,
+            "standing_charge_inc_vat": 32.9585
+          }
+        },
+        "_J": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.6814,
+            "standing_charge_inc_vat": 48.0267
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.9154,
+            "standing_charge_inc_vat": 32.4349
+          }
+        },
+        "_A": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.3264,
+            "standing_charge_inc_vat": 48.6452
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.9211,
+            "standing_charge_inc_vat": 32.4723
+          }
+        },
+        "_B": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.3689,
+            "standing_charge_inc_vat": 49.3845
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.8525,
+            "standing_charge_inc_vat": 32.5184
+          }
+        },
+        "_E": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.4624,
+            "standing_charge_inc_vat": 53.1358
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.9337,
+            "standing_charge_inc_vat": 32.6823
+          }
+        },
+        "_K": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.5754,
+            "standing_charge_inc_vat": 54.2663
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.2226,
+            "standing_charge_inc_vat": 32.4493
+          }
+        },
+        "_L": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.6092,
+            "standing_charge_inc_vat": 51.7866
+          },
+          "gas": {
+            "unit_rate_inc_vat": 7.125,
+            "standing_charge_inc_vat": 32.8147
+          }
+        }
+      }
+    },
+    {
+      "period_from": "2025-07-01",
+      "period_to": "2025-09-30",
+      "label": "Q3 2025",
+      "file_type": "annex9",
+      "regions": {
+        "_G": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.652,
+            "standing_charge_inc_vat": 48.8495
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.3053,
+            "standing_charge_inc_vat": 29.9236
+          }
+        },
+        "_F": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.9599,
+            "standing_charge_inc_vat": 57.5601
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.2836,
+            "standing_charge_inc_vat": 29.9034
+          }
+        },
+        "_M": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.8352,
+            "standing_charge_inc_vat": 56.3462
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.305,
+            "standing_charge_inc_vat": 29.889
+          }
+        },
+        "_P": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.7924,
+            "standing_charge_inc_vat": 58.6936
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.2694,
+            "standing_charge_inc_vat": 29.9408
+          }
+        },
+        "_H": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.9374,
+            "standing_charge_inc_vat": 42.3049
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.4265,
+            "standing_charge_inc_vat": 29.4662
+          }
+        },
+        "_N": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.5334,
+            "standing_charge_inc_vat": 54.2548
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.2694,
+            "standing_charge_inc_vat": 29.9667
+          }
+        },
+        "_D": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.1974,
+            "standing_charge_inc_vat": 67.6545
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.3383,
+            "standing_charge_inc_vat": 30.0875
+          }
+        },
+        "_C": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.1265,
+            "standing_charge_inc_vat": 43.7577
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.4216,
+            "standing_charge_inc_vat": 30.1767
+          }
+        },
+        "_J": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.3885,
+            "standing_charge_inc_vat": 45.2823
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.26,
+            "standing_charge_inc_vat": 29.5467
+          }
+        },
+        "_A": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.0122,
+            "standing_charge_inc_vat": 45.9353
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.2659,
+            "standing_charge_inc_vat": 29.5927
+          }
+        },
+        "_B": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.0588,
+            "standing_charge_inc_vat": 46.7753
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.1953,
+            "standing_charge_inc_vat": 29.6445
+          }
+        },
+        "_E": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.139,
+            "standing_charge_inc_vat": 50.6934
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.2788,
+            "standing_charge_inc_vat": 29.8401
+          }
+        },
+        "_K": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.3072,
+            "standing_charge_inc_vat": 51.7204
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.5762,
+            "standing_charge_inc_vat": 29.5668
+          }
+        },
+        "_L": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.3188,
+            "standing_charge_inc_vat": 49.3845
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.4757,
+            "standing_charge_inc_vat": 30.0012
+          }
+        }
+      }
+    },
+    {
+      "period_from": "2025-10-01",
+      "period_to": "2025-12-31",
+      "label": "Q4 2025",
+      "file_type": "annex9",
+      "regions": {
+        "_G": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.1096,
+            "standing_charge_inc_vat": 51.1566
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.2493,
+            "standing_charge_inc_vat": 34.1753
+          }
+        },
+        "_F": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.428,
+            "standing_charge_inc_vat": 59.8644
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.288,
+            "standing_charge_inc_vat": 34.1466
+          }
+        },
+        "_M": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.3311,
+            "standing_charge_inc_vat": 58.6475
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.2548,
+            "standing_charge_inc_vat": 34.1236
+          }
+        },
+        "_P": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.0568,
+            "standing_charge_inc_vat": 60.9978
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.2429,
+            "standing_charge_inc_vat": 34.2156
+          }
+        },
+        "_H": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.4756,
+            "standing_charge_inc_vat": 44.6236
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.3556,
+            "standing_charge_inc_vat": 33.4821
+          }
+        },
+        "_N": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.8351,
+            "standing_charge_inc_vat": 56.5504
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.243,
+            "standing_charge_inc_vat": 34.2444
+          }
+        },
+        "_D": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.723,
+            "standing_charge_inc_vat": 69.9473
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.2954,
+            "standing_charge_inc_vat": 34.4342
+          }
+        },
+        "_C": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.6319,
+            "standing_charge_inc_vat": 46.0562
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.3833,
+            "standing_charge_inc_vat": 34.5723
+          }
+        },
+        "_J": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.9196,
+            "standing_charge_inc_vat": 47.5952
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.1801,
+            "standing_charge_inc_vat": 33.6029
+          }
+        },
+        "_A": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.5298,
+            "standing_charge_inc_vat": 48.2511
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.2205,
+            "standing_charge_inc_vat": 33.669
+          }
+        },
+        "_B": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.554,
+            "standing_charge_inc_vat": 49.0853
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.1442,
+            "standing_charge_inc_vat": 33.7525
+          }
+        },
+        "_E": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.6444,
+            "standing_charge_inc_vat": 53.0005
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.2073,
+            "standing_charge_inc_vat": 34.0545
+          }
+        },
+        "_K": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.8241,
+            "standing_charge_inc_vat": 54.0333
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.5017,
+            "standing_charge_inc_vat": 33.6432
+          }
+        },
+        "_L": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.8343,
+            "standing_charge_inc_vat": 51.6888
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.4613,
+            "standing_charge_inc_vat": 34.3019
+          }
+        }
+      }
+    },
+    {
+      "period_from": "2026-01-01",
+      "period_to": "2026-03-31",
+      "label": "Q1 2026",
+      "file_type": "annex9",
+      "regions": {
+        "_G": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.4853,
+            "standing_charge_inc_vat": 52.2238
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.1073,
+            "standing_charge_inc_vat": 35.2311
+          }
+        },
+        "_F": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.9024,
+            "standing_charge_inc_vat": 60.9345
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.1475,
+            "standing_charge_inc_vat": 35.2052
+          }
+        },
+        "_M": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.847,
+            "standing_charge_inc_vat": 59.7177
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.1131,
+            "standing_charge_inc_vat": 35.1793
+          }
+        },
+        "_P": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.4061,
+            "standing_charge_inc_vat": 62.0651
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.1008,
+            "standing_charge_inc_vat": 35.2771
+          }
+        },
+        "_H": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.9078,
+            "standing_charge_inc_vat": 45.7023
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.2177,
+            "standing_charge_inc_vat": 34.5551
+          }
+        },
+        "_N": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.3072,
+            "standing_charge_inc_vat": 57.6205
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.1008,
+            "standing_charge_inc_vat": 35.303
+          }
+        },
+        "_D": {
+          "electricity": {
+            "unit_rate_inc_vat": 27.0831,
+            "standing_charge_inc_vat": 71.0116
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.1551,
+            "standing_charge_inc_vat": 35.4871
+          }
+        },
+        "_C": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.1366,
+            "standing_charge_inc_vat": 47.109
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.2463,
+            "standing_charge_inc_vat": 35.6252
+          }
+        },
+        "_J": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.3192,
+            "standing_charge_inc_vat": 48.6625
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.0357,
+            "standing_charge_inc_vat": 34.6759
+          }
+        },
+        "_A": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.9607,
+            "standing_charge_inc_vat": 49.3299
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.0774,
+            "standing_charge_inc_vat": 34.7392
+          }
+        },
+        "_B": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.0342,
+            "standing_charge_inc_vat": 50.1699
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.9984,
+            "standing_charge_inc_vat": 34.8226
+          }
+        },
+        "_E": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.1269,
+            "standing_charge_inc_vat": 54.0822
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.0639,
+            "standing_charge_inc_vat": 35.116
+          }
+        },
+        "_K": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.2171,
+            "standing_charge_inc_vat": 55.1063
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.3691,
+            "standing_charge_inc_vat": 34.7075
+          }
+        },
+        "_L": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.2377,
+            "standing_charge_inc_vat": 52.7503
+          },
+          "gas": {
+            "unit_rate_inc_vat": 6.3271,
+            "standing_charge_inc_vat": 35.3548
+          }
+        }
+      }
+    },
+    {
+      "period_from": "2026-04-01",
+      "period_to": "2026-06-30",
+      "label": "Q2 2026",
+      "file_type": "annex9",
+      "regions": {
+        "_G": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.703,
+            "standing_charge_inc_vat": 47.6268
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.651,
+            "standing_charge_inc_vat": 29.2216
+          }
+        },
+        "_F": {
+          "electricity": {
+            "unit_rate_inc_vat": 23.8086,
+            "standing_charge_inc_vat": 64.2974
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.6944,
+            "standing_charge_inc_vat": 29.1986
+          }
+        },
+        "_M": {
+          "electricity": {
+            "unit_rate_inc_vat": 23.8498,
+            "standing_charge_inc_vat": 64.3952
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.6796,
+            "standing_charge_inc_vat": 29.1756
+          }
+        },
+        "_P": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.0168,
+            "standing_charge_inc_vat": 57.5659
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.6445,
+            "standing_charge_inc_vat": 29.2734
+          }
+        },
+        "_H": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.9814,
+            "standing_charge_inc_vat": 49.7038
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.9394,
+            "standing_charge_inc_vat": 28.5571
+          }
+        },
+        "_N": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.3958,
+            "standing_charge_inc_vat": 64.1967
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.6446,
+            "standing_charge_inc_vat": 29.2964
+          }
+        },
+        "_D": {
+          "electricity": {
+            "unit_rate_inc_vat": 26.1932,
+            "standing_charge_inc_vat": 70.7786
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.6921,
+            "standing_charge_inc_vat": 29.4777
+          }
+        },
+        "_C": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.8963,
+            "standing_charge_inc_vat": 44.8336
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.9145,
+            "standing_charge_inc_vat": 29.6042
+          }
+        },
+        "_J": {
+          "electricity": {
+            "unit_rate_inc_vat": 25.2261,
+            "standing_charge_inc_vat": 54.4475
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.8012,
+            "standing_charge_inc_vat": 28.6693
+          }
+        },
+        "_A": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.9367,
+            "standing_charge_inc_vat": 53.947
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.6741,
+            "standing_charge_inc_vat": 28.7441
+          }
+        },
+        "_B": {
+          "electricity": {
+            "unit_rate_inc_vat": 23.6736,
+            "standing_charge_inc_vat": 53.6075
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.6017,
+            "standing_charge_inc_vat": 28.8247
+          }
+        },
+        "_E": {
+          "electricity": {
+            "unit_rate_inc_vat": 23.8937,
+            "standing_charge_inc_vat": 59.7234
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.6876,
+            "standing_charge_inc_vat": 29.1123
+          }
+        },
+        "_K": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.9655,
+            "standing_charge_inc_vat": 57.9025
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.8903,
+            "standing_charge_inc_vat": 28.7182
+          }
+        },
+        "_L": {
+          "electricity": {
+            "unit_rate_inc_vat": 24.9009,
+            "standing_charge_inc_vat": 57.8622
+          },
+          "gas": {
+            "unit_rate_inc_vat": 5.8373,
+            "standing_charge_inc_vat": 29.3511
+          }
+        }
+      }
+    }
+  ]
+}
