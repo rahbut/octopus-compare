@@ -59,6 +59,9 @@ export interface Product {
   is_tracker: boolean;
   is_prepay: boolean;
   is_business: boolean;
+  /** Populated after fetching product detail — undefined means not yet checked */
+  has_electricity?: boolean;
+  has_gas?: boolean;
 }
 
 export interface ConsumptionResult {
@@ -90,11 +93,82 @@ export class OctopusApi {
     };
   }
 
+  /** Fetch the customer's given name via the GraphQL API. Returns null on failure. */
+  async getViewerName(): Promise<string | null> {
+    const GQL = 'https://api.octopus.energy/v1/graphql/';
+    const post = (body: object, token?: string) => fetch(GQL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `JWT ${token}` } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+
+    try {
+      // Step 1 — exchange the API key for a short-lived JWT
+      const tokenRes = await post({
+        query: `mutation { obtainKrakenToken(input: { APIKey: "${this.apiKey}" }) { token } }`,
+      });
+      if (!tokenRes.ok) {
+        console.warn(`[Octopus] GraphQL token exchange failed: HTTP ${tokenRes.status}`);
+        return null;
+      }
+      const tokenData = await tokenRes.json();
+      const token: string | undefined = tokenData?.data?.obtainKrakenToken?.token;
+      if (!token) {
+        const errs = tokenData?.errors?.map((e: { message: string }) => e.message).join(', ');
+        console.warn('[Octopus] GraphQL token exchange returned no token:', errs ?? 'unknown error');
+        return null;
+      }
+
+      // Step 2 — query the viewer's given name
+      const nameRes = await post({ query: '{ viewer { givenName } }' }, token);
+      if (!nameRes.ok) {
+        console.warn(`[Octopus] GraphQL name query failed: HTTP ${nameRes.status}`);
+        return null;
+      }
+      const nameData = await nameRes.json();
+      const name: string | null = nameData?.data?.viewer?.givenName ?? null;
+      const nameErrors = nameData?.errors;
+      if (nameErrors?.length) {
+        console.warn('[Octopus] GraphQL name query errors:', nameErrors.map((e: { message: string }) => e.message).join(', '));
+      }
+      if (!name) console.warn('[Octopus] GraphQL returned no givenName');
+      return name;
+    } catch (err) {
+      console.warn('[Octopus] GraphQL name fetch threw:', err);
+      return null;
+    }
+  }
+
   async getAccountDetails(): Promise<OctopusAccount> {
     const url = `${BASE_URL}/accounts/${this.accountNum}/`;
     const res = await fetch(url, { headers: this.headers });
     if (!res.ok) throw new Error(`Account fetch failed: ${res.status}`);
     return res.json();
+  }
+
+  /** Fetch a single product's detail (no auth required). Returns null on failure. */
+  async getProductDetail(productCode: string): Promise<{
+    full_name: string;
+    display_name: string;
+    has_electricity: boolean;
+    has_gas: boolean;
+  } | null> {
+    try {
+      const res = await fetch(`${BASE_URL}/products/${productCode}/`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      return {
+        full_name: data.full_name,
+        display_name: data.display_name,
+        has_electricity: Object.keys(data.single_register_electricity_tariffs ?? {}).length > 0,
+        has_gas: Object.keys(data.single_register_gas_tariffs ?? {}).length > 0,
+      };
+    } catch {
+      return null;
+    }
   }
 
   /** Fetches all available domestic products across all pages. */

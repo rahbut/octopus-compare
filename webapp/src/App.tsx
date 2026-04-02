@@ -32,7 +32,7 @@ function App() {
     <div className="app-container">
       <header className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <h1 style={{ margin: 0, fontSize: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          🐙 <span style={{ color: 'var(--accent-color)' }}>Octopus</span> Comparison
+          🐙 <span style={{ color: 'var(--accent-color)' }}>Octopus</span> Compare
         </h1>
         <div className="flex-row gap-1">
           <button onClick={toggleTheme} className="icon-btn" aria-label="Toggle Theme" title="Toggle Theme">
@@ -40,7 +40,7 @@ function App() {
           </button>
           {credentials && (
             <button onClick={handleLogout} style={{ background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}>
-              Disconnect
+              Sign Out
             </button>
           )}
         </div>
