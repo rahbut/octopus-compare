@@ -1,327 +1,881 @@
-import { useState, useEffect, useMemo } from 'react';
-import { OctopusApi, type OctopusAccount, type Product, type ConsumptionResult } from './api';
-import { CostEngine, type CostCalculation } from './CostEngine';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  OctopusApi,
+  toUtcIso,
+  type OctopusAccount,
+  type MeterPoint,
+  type Product,
+  type ConsumptionResult,
+  type Agreement,
+} from './api';
+import {
+  CostEngine,
+  type CostCalculation,
+  getGspFromMpan,
+  calculateOfgemCapCost,
+} from './CostEngine';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from 'recharts';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 interface DashboardProps {
   api: OctopusApi;
 }
 
 type Timeframe = '7days' | '30days' | '1year';
+type AppView = 'usage' | 'compare';
 
-function aggregateConsumptionByDay(consumption: ConsumptionResult[]) {
-  const dailyData: Record<string, number> = {};
-  const sorted = [...consumption].sort((a, b) => new Date(a.interval_start).getTime() - new Date(b.interval_start).getTime());
+interface MeterInfo {
+  id: string;
+  label: string; // e.g. "Electricity Import", "Gas"
+  fuelType: 'electricity' | 'gas';
+  isExport: boolean;
+  /** All serial numbers listed on this meter point, preference-ordered */
+  serials: string[];
+  /** The confirmed active serial (found by probing the API) */
+  activeSerial: string | null;
+  point: MeterPoint;
+}
 
-  for (const item of sorted) {
-    const dateObj = new Date(item.interval_start);
-    const dateKey = dateObj.toISOString().split('T')[0];
-    if (!dailyData[dateKey]) dailyData[dateKey] = 0;
-    dailyData[dateKey] += item.consumption;
+interface MeterData {
+  meter: MeterInfo;
+  current: ConsumptionResult[];
+  prior: ConsumptionResult[];
+  /** Latest date available in the API for this meter */
+  latestDate: Date | null;
+  currentCost: CostCalculation | null;
+  priorCost: CostCalculation | null;
+  loading: boolean;
+  error: string | null;
+}
+
+interface BaselineResult {
+  current: CostCalculation;
+  ofgem: CostCalculation;
+  tariffCode: string;
+  productCode: string;
+  regionLetter: string;
+}
+
+// ---------------------------------------------------------------------------
+// Pure helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Order serials for a meter point: prefer meters with a named rate
+ * (i.e. the active settlement meter) over those with an empty rate string.
+ */
+function orderSerials(point: MeterPoint): string[] {
+  const meters = point.meters ?? [];
+  // Meters with a non-empty rate value on any register are the active ones
+  const active = meters.filter(m =>
+    m.registers?.some(r => r.rate && r.rate !== '' && r.is_settlement_register)
+  );
+  const inactive = meters.filter(
+    m => !m.registers?.some(r => r.rate && r.rate !== '' && r.is_settlement_register)
+  );
+  return [...active, ...inactive].map(m => m.serial_number).filter(Boolean);
+}
+
+function buildMeterList(account: OctopusAccount): MeterInfo[] {
+  const property = account.properties[0];
+  if (!property) return [];
+
+  const elec: MeterInfo[] = (property.electricity_meter_points ?? []).map(m => ({
+    id: m.mpan!,
+    label: m.is_export ? 'Electricity Export' : 'Electricity Import',
+    fuelType: 'electricity' as const,
+    isExport: m.is_export ?? false,
+    serials: orderSerials(m),
+    activeSerial: null,
+    point: m,
+  }));
+
+  const gas: MeterInfo[] = (property.gas_meter_points ?? []).map(m => ({
+    id: m.mprn!,
+    label: 'Gas',
+    fuelType: 'gas' as const,
+    isExport: false,
+    serials: orderSerials(m),
+    activeSerial: null,
+    point: m,
+  }));
+
+  return [...elec, ...gas].filter(m => m.id && m.serials.length > 0);
+}
+
+function getActiveAgreement(agreements: Agreement[] | undefined): Agreement | null {
+  if (!agreements?.length) return null;
+  const now = new Date();
+  const sorted = [...agreements].sort(
+    (a, b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime()
+  );
+  return sorted.find(ag => !ag.valid_to || new Date(ag.valid_to) > now) ?? sorted[0];
+}
+
+function productCodeFromTariffCode(tariffCode: string): string {
+  // Pattern: {E|G}-{1R|2R}-{PRODUCT_CODE}-{REGION}
+  const parts = tariffCode.split('-');
+  if (parts.length >= 4) return parts.slice(2, -1).join('-');
+  return tariffCode;
+}
+
+function penceToGBP(pence: number): string {
+  return `£${(pence / 100).toFixed(2)}`;
+}
+
+function aggregateByDay(consumption: ConsumptionResult[]) {
+  const daily: Record<string, number> = {};
+  for (const item of consumption) {
+    const key = new Date(item.interval_start).toISOString().split('T')[0];
+    daily[key] = (daily[key] ?? 0) + item.consumption;
   }
-  
-  return Object.keys(dailyData).sort().map(dateKey => {
-    const d = new Date(dateKey);
+  return Object.keys(daily).sort().map(k => ({
+    date: new Date(k).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+    dateKey: k,
+    kWh: Number(daily[k].toFixed(3)),
+  }));
+}
+
+function aggregateByMonth(consumption: ConsumptionResult[]) {
+  const monthly: Record<string, number> = {};
+  for (const item of consumption) {
+    const d = new Date(item.interval_start);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    monthly[key] = (monthly[key] ?? 0) + item.consumption;
+  }
+  return Object.keys(monthly).sort().map(k => {
+    const [y, m] = k.split('-');
     return {
-      date: d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
-      dateKey,
-      kWh: Number(dailyData[dateKey].toFixed(2))
+      date: new Date(Number(y), Number(m) - 1).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }),
+      dateKey: k,
+      kWh: Number(monthly[k].toFixed(3)),
     };
   });
 }
 
-function aggregateConsumptionByMonth(consumption: ConsumptionResult[]) {
-  const monthlyData: Record<string, number> = {};
-  const sorted = [...consumption].sort((a, b) => new Date(a.interval_start).getTime() - new Date(b.interval_start).getTime());
-
-  for (const item of sorted) {
-    const dateObj = new Date(item.interval_start);
-    const dateKey = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
-    if (!monthlyData[dateKey]) monthlyData[dateKey] = 0;
-    monthlyData[dateKey] += item.consumption;
-  }
-  
-  return Object.keys(monthlyData).sort().map(dateKey => {
-    const [year, month] = dateKey.split('-');
-    const d = new Date(Number(year), Number(month) - 1, 1);
-    return {
-      date: d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }),
-      dateKey,
-      kWh: Number(monthlyData[dateKey].toFixed(2))
-    };
-  });
+/** Merge current + prior period into a single chart dataset for side-by-side bars */
+function mergePeriodsForChart(
+  current: ReturnType<typeof aggregateByDay>,
+  prior: ReturnType<typeof aggregateByDay>,
+  currentLabel: string,
+  priorLabel: string
+) {
+  // Align by index position (day 1 vs day 1, day 2 vs day 2, etc.)
+  const len = Math.max(current.length, prior.length);
+  return Array.from({ length: len }, (_, i) => ({
+    index: i + 1,
+    [currentLabel]: current[i]?.kWh ?? null,
+    [priorLabel]: prior[i]?.kWh ?? null,
+    date: current[i]?.date ?? prior[i]?.date ?? '',
+  }));
 }
+
+function timeframeDays(tf: Timeframe): number {
+  return tf === '7days' ? 7 : tf === '1year' ? 365 : 30;
+}
+
+function timeframeLabel(tf: Timeframe): string {
+  return tf === '7days' ? 'Last 7 days' : tf === '1year' ? 'Last 12 months' : 'Last 30 days';
+}
+
+function priorPeriodLabel(tf: Timeframe): string {
+  return tf === '7days' ? 'Prior 7 days' : tf === '1year' ? 'Prior 12 months' : 'Prior 30 days';
+}
+
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
+
+function SummaryCard({
+  label, value, sub, highlight, delta,
+}: {
+  label: string; value: string; sub?: string; highlight?: boolean;
+  delta?: { value: string; positive: boolean | null };
+}) {
+  return (
+    <div className="panel flex-col" style={{
+      flex: '1 1 130px', gap: '0.25rem',
+      border: highlight ? '1px solid var(--accent-color)' : undefined,
+      background: highlight ? 'rgba(229,0,122,0.06)' : undefined,
+    }}>
+      <span className="text-secondary" style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        {label}
+      </span>
+      <span style={{ fontSize: '1.4rem', fontWeight: 700, lineHeight: 1.15 }}>{value}</span>
+      {delta && (
+        <span style={{
+          fontSize: '0.8rem', fontWeight: 600,
+          color: delta.positive === null ? 'var(--text-secondary)' : delta.positive ? 'var(--success-color)' : 'var(--error-color)',
+        }}>
+          {delta.value}
+        </span>
+      )}
+      {sub && <span className="text-secondary" style={{ fontSize: '0.75rem' }}>{sub}</span>}
+    </div>
+  );
+}
+
+function ComparisonRow({
+  label, result, baseline, isCurrent, isOfgem,
+}: {
+  label: string; result: CostCalculation; baseline?: CostCalculation;
+  isCurrent?: boolean; isOfgem?: boolean;
+}) {
+  const delta = baseline ? result.totalCostPence - baseline.totalCostPence : null;
+  const deltaStr = delta === null ? null
+    : delta < 0 ? `Save ${penceToGBP(Math.abs(delta))}`
+    : delta > 0 ? `+${penceToGBP(delta)} extra`
+    : 'Same cost';
+  const deltaColor = delta === null ? undefined
+    : delta < 0 ? 'var(--success-color)'
+    : delta > 0 ? 'var(--error-color)'
+    : 'var(--text-secondary)';
+
+  return (
+    <div style={{
+      display: 'grid', gridTemplateColumns: '1fr repeat(4, auto)',
+      gap: '1rem', alignItems: 'center',
+      padding: '0.75rem 1rem', borderRadius: '8px',
+      background: isCurrent ? 'rgba(229,0,122,0.06)' : 'var(--bg-color)',
+      border: isCurrent ? '1px solid var(--accent-color)' : '1px solid var(--border-color)',
+      fontSize: '0.9rem',
+    }}>
+      <span style={{ fontWeight: isCurrent ? 700 : 400 }}>
+        {label}
+        {isCurrent && <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'var(--accent-color)', color: '#fff', verticalAlign: 'middle' }}>current</span>}
+        {isOfgem && <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'var(--border-color)', color: 'var(--text-secondary)', verticalAlign: 'middle' }}>Ofgem cap</span>}
+      </span>
+      <span style={{ textAlign: 'right', minWidth: 70 }}>{result.totalConsumptionKwh.toFixed(1)} kWh</span>
+      <span style={{ textAlign: 'right', minWidth: 80, fontWeight: 600 }}>{penceToGBP(result.totalCostPence)}</span>
+      <span className="text-secondary" style={{ textAlign: 'right', minWidth: 80, fontSize: '0.82rem' }}>{result.averagePencePerKwh.toFixed(1)}p/kWh</span>
+      <span style={{ textAlign: 'right', minWidth: 90, color: deltaColor, fontWeight: delta ? 600 : 400 }}>{deltaStr ?? '—'}</span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Meter panel — shows one meter's usage + period comparison
+// ---------------------------------------------------------------------------
+
+function MeterPanel({
+  data, timeframe,
+}: {
+  data: MeterData;
+  timeframe: Timeframe;
+}) {
+  const { meter, current, prior, currentCost, priorCost, loading, error } = data;
+  const useMonthly = timeframe === '1year';
+
+  const currentAgg = useMemo(
+    () => useMonthly ? aggregateByMonth(current) : aggregateByDay(current),
+    [current, useMonthly]
+  );
+  const priorAgg = useMemo(
+    () => useMonthly ? aggregateByMonth(prior) : aggregateByDay(prior),
+    [prior, useMonthly]
+  );
+
+  const chartData = useMemo(
+    () => mergePeriodsForChart(currentAgg, priorAgg, 'current', 'prior'),
+    [currentAgg, priorAgg]
+  );
+
+  const currentKwh = current.reduce((s, r) => s + r.consumption, 0);
+  const priorKwh = prior.reduce((s, r) => s + r.consumption, 0);
+  const kwhDelta = priorKwh > 0 ? currentKwh - priorKwh : null;
+  const kwhDeltaPct = priorKwh > 0 ? (kwhDelta! / priorKwh) * 100 : null;
+
+  const costDelta = currentCost && priorCost
+    ? currentCost.totalCostPence - priorCost.totalCostPence
+    : null;
+
+  const hasPrior = prior.length > 0;
+
+  return (
+    <div className="panel flex-col gap-3">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h3 style={{ margin: 0 }}>{meter.label}</h3>
+        {meter.activeSerial && (
+          <span className="text-secondary" style={{ fontSize: '0.78rem' }}>
+            Meter {meter.activeSerial}
+          </span>
+        )}
+      </div>
+
+      {loading && (
+        <div className="text-secondary text-center" style={{ padding: '2rem 0' }}>
+          Loading…
+        </div>
+      )}
+
+      {error && (
+        <div style={{ color: 'var(--error-color)', fontSize: '0.85rem' }}>{error}</div>
+      )}
+
+      {!loading && !error && current.length === 0 && (
+        <div className="text-secondary text-center" style={{ padding: '2rem 0', fontSize: '0.87rem' }}>
+          No data available for this period.
+        </div>
+      )}
+
+      {!loading && current.length > 0 && (
+        <>
+          {/* Summary cards */}
+          <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+            <SummaryCard
+              label="Consumption"
+              value={`${currentKwh.toFixed(1)} kWh`}
+              sub={timeframeLabel(timeframe)}
+              highlight
+            />
+            {currentCost && (
+              <SummaryCard
+                label="Cost"
+                value={penceToGBP(currentCost.totalCostPence)}
+                sub={`inc. ${penceToGBP(currentCost.standingChargePence)} standing`}
+                highlight
+              />
+            )}
+            {currentCost && (
+              <SummaryCard
+                label="Avg Rate"
+                value={`${currentCost.averagePencePerKwh.toFixed(1)}p/kWh`}
+                sub="unit rate only"
+              />
+            )}
+            {hasPrior && kwhDelta !== null && (
+              <SummaryCard
+                label="vs Prior Period"
+                value={`${kwhDelta >= 0 ? '+' : ''}${kwhDelta.toFixed(1)} kWh`}
+                sub={`${kwhDeltaPct !== null ? `${kwhDeltaPct >= 0 ? '+' : ''}${kwhDeltaPct.toFixed(0)}%` : ''} ${priorPeriodLabel(timeframe)}`}
+                delta={{
+                  value: costDelta !== null
+                    ? `${costDelta >= 0 ? '+' : ''}${penceToGBP(costDelta)} cost`
+                    : '',
+                  positive: kwhDelta !== null ? kwhDelta < 0 : null,
+                }}
+              />
+            )}
+          </div>
+
+          {/* Chart */}
+          <div style={{ width: '100%', height: 240, minHeight: 240, overflow: 'hidden' }}>
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }} barCategoryGap="20%">
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
+                <XAxis dataKey="date" stroke="var(--text-secondary)" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                <YAxis stroke="var(--text-secondary)" tick={{ fontSize: 11 }} unit=" kWh" width={60} />
+                <Tooltip
+                  cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+                  contentStyle={{ backgroundColor: 'var(--panel-bg)', borderColor: 'var(--border-color)', color: 'var(--text-primary)', borderRadius: '8px', fontSize: '0.85rem' }}
+                />
+                {hasPrior && <Legend wrapperStyle={{ fontSize: '0.8rem' }} />}
+                <Bar dataKey="current" name={timeframeLabel(timeframe)} fill="var(--chart-current)" radius={[3, 3, 0, 0]} />
+                {hasPrior && <Bar dataKey="prior" name={priorPeriodLabel(timeframe)} fill="var(--chart-prior)" radius={[3, 3, 0, 0]} />}
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main Dashboard
+// ---------------------------------------------------------------------------
 
 export function Dashboard({ api }: DashboardProps) {
   const [account, setAccount] = useState<OctopusAccount | null>(null);
+  const [meters, setMeters] = useState<MeterInfo[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [initError, setInitError] = useState<string | null>(null);
 
-  // Usage State
-  const [selectedMeterId, setSelectedMeterId] = useState<string>('');
+  const [appView, setAppView] = useState<AppView>('usage');
   const [timeframe, setTimeframe] = useState<Timeframe>('30days');
-  const [consumptionData, setConsumptionData] = useState<ConsumptionResult[]>([]);
-  const [isFetchingUsage, setIsFetchingUsage] = useState(false);
-  const [usageError, setUsageError] = useState<string | null>(null);
+  const [meterData, setMeterData] = useState<Record<string, MeterData>>({});
 
-  // Cost Engine State
+  // Compare view state
+  const [compareMeterId, setCompareMeterId] = useState<string>('');
   const [selectedProduct, setSelectedProduct] = useState<string>('');
-  const [isCalculating, setIsCalculating] = useState(false);
-  const [calcResult, setCalcResult] = useState<CostCalculation | null>(null);
+  const [isCalculatingAlt, setIsCalculatingAlt] = useState(false);
+  const [altResult, setAltResult] = useState<CostCalculation | null>(null);
+  const [altProductName, setAltProductName] = useState<string>('');
+  const [baseline, setBaseline] = useState<BaselineResult | null>(null);
+
+  // -----------------------------------------------------------------------
+  // Load account + products + resolve active serials
+  // -----------------------------------------------------------------------
 
   useEffect(() => {
-    async function loadInitialData() {
+    async function init() {
       try {
         setLoading(true);
         const [accData, prodData] = await Promise.all([
           api.getAccountDetails(),
-          api.getProducts()
+          api.getProducts(),
         ]);
-        setAccount(accData);
-        
-        const domesticProducts = prodData.results.filter(p => !p.is_business);
-        setProducts(domesticProducts);
-        if (domesticProducts.length > 0) {
-          setSelectedProduct(domesticProducts[0].code);
-        }
-        
-        const elec = accData.properties[0]?.electricity_meter_points || [];
-        const gas = accData.properties[0]?.gas_meter_points || [];
-        
-        const allMeters = [
-          ...elec.map(m => m.mpan),
-          ...gas.map(m => m.mprn)
-        ].filter(Boolean) as string[];
 
-        if (allMeters.length > 0) {
-          setSelectedMeterId(allMeters[0]);
+        setAccount(accData);
+
+        const meterList = buildMeterList(accData);
+
+        // Resolve the active serial for each meter in parallel
+        const resolved = await Promise.all(
+          meterList.map(async m => {
+            const active = await api.findActiveSerial(m.fuelType, m.id, m.serials);
+            return { ...m, activeSerial: active };
+          })
+        );
+
+        // Filter to meters with a working serial
+        const usable = resolved.filter(m => m.activeSerial !== null);
+        setMeters(usable);
+
+        // Default compare meter to the first import electricity meter
+        const importElec = usable.find(m => m.fuelType === 'electricity' && !m.isExport);
+        setCompareMeterId(importElec?.id ?? usable[0]?.id ?? '');
+
+        const domestic = prodData.results.filter(p => !p.is_business);
+        setProducts(domestic);
+        if (domestic.length > 0) {
+          setSelectedProduct(domestic[0].code);
+          setAltProductName(domestic[0].display_name);
         }
-      } catch (err: any) {
-        setError(err.message);
+      } catch (err: unknown) {
+        setInitError(err instanceof Error ? err.message : 'Unknown error loading account');
       } finally {
         setLoading(false);
       }
     }
-    loadInitialData();
+    init();
+  }, [api]);
+
+  // -----------------------------------------------------------------------
+  // Fetch data for all meters whenever timeframe changes
+  // -----------------------------------------------------------------------
+
+  const fetchAllMeters = useCallback(async (
+    meterList: MeterInfo[],
+    tf: Timeframe,
+    acct: OctopusAccount
+  ) => {
+    const property = acct.properties[0];
+    const elecPoint = property?.electricity_meter_points?.find(m => !m.is_export);
+    const mpan = elecPoint?.mpan ?? '';
+    const regionLetter = mpan ? getGspFromMpan(mpan) : '_A';
+
+    await Promise.all(meterList.map(async meter => {
+      if (!meter.activeSerial) return;
+
+      // Mark as loading
+      setMeterData(prev => ({
+        ...prev,
+        [meter.id]: {
+          meter, current: [], prior: [], latestDate: null,
+          currentCost: null, priorCost: null, loading: true, error: null,
+        },
+      }));
+
+      try {
+        const latestStr = await api.getLatestConsumptionDate(meter.fuelType, meter.id, meter.activeSerial);
+        if (!latestStr) {
+          setMeterData(prev => ({
+            ...prev,
+            [meter.id]: { ...prev[meter.id], loading: false, error: 'No data available for this meter.' },
+          }));
+          return;
+        }
+
+        const latestDate = new Date(latestStr);
+        const days = timeframeDays(tf);
+        const currentTo = latestDate;
+        const currentFrom = new Date(currentTo.getTime() - days * 86400_000);
+        const priorTo = currentFrom;
+        const priorFrom = new Date(priorTo.getTime() - days * 86400_000);
+
+        const [currentData, priorData] = await Promise.all([
+          meter.fuelType === 'electricity'
+            ? api.getElectricityConsumption(meter.id, meter.activeSerial, currentFrom.toISOString(), currentTo.toISOString())
+            : api.getGasConsumption(meter.id, meter.activeSerial, currentFrom.toISOString(), currentTo.toISOString()),
+          meter.fuelType === 'electricity'
+            ? api.getElectricityConsumption(meter.id, meter.activeSerial, priorFrom.toISOString(), priorTo.toISOString())
+            : api.getGasConsumption(meter.id, meter.activeSerial, priorFrom.toISOString(), priorTo.toISOString()),
+        ]);
+
+        // Compute costs using current tariff
+        const agreement = getActiveAgreement(meter.point.agreements);
+        let currentCost: CostCalculation | null = null;
+        let priorCost: CostCalculation | null = null;
+
+        if (agreement && currentData.length > 0) {
+          const tariffCode = agreement.tariff_code;
+          const productCode = productCodeFromTariffCode(tariffCode);
+          const sortedCurrent = [...currentData].sort((a, b) => new Date(a.interval_start).getTime() - new Date(b.interval_start).getTime());
+          const periodFrom = toUtcIso(sortedCurrent[0].interval_start);
+          const periodTo = toUtcIso(sortedCurrent[sortedCurrent.length - 1].interval_end);
+
+          try {
+            const [unitRates, standingCharges] = await Promise.all([
+              CostEngine.fetchTariffRates(api, productCode, tariffCode, meter.fuelType, periodFrom, periodTo),
+              CostEngine.fetchStandingCharges(api, productCode, tariffCode, meter.fuelType, periodFrom, periodTo),
+            ]);
+            currentCost = CostEngine.calculateCost(currentData, unitRates, standingCharges);
+          } catch {
+            // Cost calculation failed — show usage data without cost
+          }
+        }
+
+        if (agreement && priorData.length > 0) {
+          // For the prior period, find the agreement that was active then
+          const priorSortedData = [...priorData].sort((a, b) => new Date(a.interval_start).getTime() - new Date(b.interval_start).getTime());
+          const priorPeriodFrom = toUtcIso(priorSortedData[0].interval_start);
+          const priorPeriodTo = toUtcIso(priorSortedData[priorSortedData.length - 1].interval_end);
+
+          // Find agreement active during the prior period
+          const midPoint = new Date((new Date(priorPeriodFrom).getTime() + new Date(priorPeriodTo).getTime()) / 2);
+          const priorAgreement = meter.point.agreements?.find(ag => {
+            const from = new Date(ag.valid_from);
+            const to = ag.valid_to ? new Date(ag.valid_to) : new Date('2099-01-01');
+            return midPoint >= from && midPoint < to;
+          }) ?? agreement;
+
+          const priorProductCode = productCodeFromTariffCode(priorAgreement.tariff_code);
+
+          try {
+            const [priorUnitRates, priorStandingCharges] = await Promise.all([
+              CostEngine.fetchTariffRates(api, priorProductCode, priorAgreement.tariff_code, meter.fuelType, priorPeriodFrom, priorPeriodTo),
+              CostEngine.fetchStandingCharges(api, priorProductCode, priorAgreement.tariff_code, meter.fuelType, priorPeriodFrom, priorPeriodTo),
+            ]);
+            priorCost = CostEngine.calculateCost(priorData, priorUnitRates, priorStandingCharges);
+          } catch {
+            // Prior cost unavailable
+          }
+        }
+
+        // Also compute Ofgem cap for the compare view baseline (electricity import only)
+        if (!meter.isExport && meter.fuelType === 'electricity' && currentData.length > 0) {
+          const agreement = getActiveAgreement(meter.point.agreements);
+          if (agreement) {
+            const tariffCode = agreement.tariff_code;
+            const productCode = productCodeFromTariffCode(tariffCode);
+            const sortedCurrent = [...currentData].sort((a, b) => new Date(a.interval_start).getTime() - new Date(b.interval_start).getTime());
+            const periodFrom = toUtcIso(sortedCurrent[0].interval_start);
+            const periodTo = toUtcIso(sortedCurrent[sortedCurrent.length - 1].interval_end);
+
+            try {
+              const [unitRates, standingCharges] = await Promise.all([
+                CostEngine.fetchTariffRates(api, productCode, tariffCode, meter.fuelType, periodFrom, periodTo),
+                CostEngine.fetchStandingCharges(api, productCode, tariffCode, meter.fuelType, periodFrom, periodTo),
+              ]);
+              const current = CostEngine.calculateCost(currentData, unitRates, standingCharges);
+              const ofgem = calculateOfgemCapCost(currentData, regionLetter, meter.fuelType);
+              setBaseline({ current, ofgem, tariffCode, productCode, regionLetter });
+            } catch {
+              // baseline unavailable
+            }
+          }
+        }
+
+        setMeterData(prev => ({
+          ...prev,
+          [meter.id]: {
+            meter, current: currentData, prior: priorData,
+            latestDate, currentCost, priorCost, loading: false, error: null,
+          },
+        }));
+      } catch (err: unknown) {
+        setMeterData(prev => ({
+          ...prev,
+          [meter.id]: {
+            ...prev[meter.id],
+            loading: false,
+            error: err instanceof Error ? err.message : 'Failed to load data',
+          },
+        }));
+      }
+    }));
   }, [api]);
 
   useEffect(() => {
-    if (!account || !selectedMeterId) return;
-    const property = account.properties[0];
-    
-    let type: 'electricity' | 'gas' = 'electricity';
-    let serial = '';
-    
-    const elecPoint = property?.electricity_meter_points?.find(m => m.mpan === selectedMeterId);
-    if (elecPoint && elecPoint.meters[0]?.serial_number) {
-      type = 'electricity';
-      serial = elecPoint.meters[0].serial_number;
-    } else {
-      const gasPoint = property?.gas_meter_points?.find(m => m.mprn === selectedMeterId);
-      if (gasPoint && gasPoint.meters[0]?.serial_number) {
-        type = 'gas';
-        serial = gasPoint.meters[0].serial_number;
-      }
-    }
+    if (meters.length === 0 || !account) return;
+    setAltResult(null);
+    setBaseline(null);
+    fetchAllMeters(meters, timeframe, account);
+  }, [meters, timeframe, account, fetchAllMeters]);
 
-    if (!serial) return;
-    fetchUsage(type, selectedMeterId, serial, timeframe);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account, selectedMeterId, timeframe]);
-
-  const fetchUsage = async (type: 'electricity'|'gas', id: string, serial: string, tf: Timeframe) => {
-    setIsFetchingUsage(true);
-    setUsageError(null);
-    setCalcResult(null); // Reset comparison when timeframe changes
-
-    try {
-      const latestDateStr = await api.getLatestConsumptionDate(type, id, serial);
-      if (!latestDateStr) {
-        setConsumptionData([]);
-        setIsFetchingUsage(false);
-        return;
-      }
-
-      const to = new Date(latestDateStr);
-      let days = 30;
-      if (tf === '7days') days = 7;
-      if (tf === '1year') days = 365;
-
-      const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
-      const fromIso = from.toISOString();
-      const toIso = to.toISOString();
-      
-      const data = type === 'electricity' 
-        ? await api.getElectricityConsumption(id, serial, fromIso, toIso)
-        : await api.getGasConsumption(id, serial, fromIso, toIso);
-      
-      setConsumptionData(data);
-    } catch (err: any) {
-      setUsageError(err.message);
-    } finally {
-      setIsFetchingUsage(false);
-    }
-  };
-
-  const chartData = useMemo(() => {
-    if (!consumptionData.length) return [];
-    if (timeframe === '1year') {
-      return aggregateConsumptionByMonth(consumptionData);
-    }
-    return aggregateConsumptionByDay(consumptionData);
-  }, [consumptionData, timeframe]);
-
-  const allMeters = useMemo(() => {
-    const elec = account?.properties[0]?.electricity_meter_points || [];
-    const gas = account?.properties[0]?.gas_meter_points || [];
-    return [
-      ...elec.map(m => ({ id: m.mpan!, type: 'Electricity' })),
-      ...gas.map(m => ({ id: m.mprn!, type: 'Gas' }))
-    ].filter(m => m.id);
-  }, [account]);
-
-  if (loading) return <div className="panel text-center text-secondary">Loading account and tariff data...</div>;
-  if (error) return <div className="panel"><h3 style={{ color: 'var(--error-color)' }}>Error</h3><p>{error}</p></div>;
-  if (!account) return null;
-
-  const property = account.properties[0];
+  // -----------------------------------------------------------------------
+  // Compare view: run alternative tariff
+  // -----------------------------------------------------------------------
 
   const runComparison = async () => {
-    if (!consumptionData.length) return;
-    setIsCalculating(true);
-    setCalcResult(null);
+    const meter = meters.find(m => m.id === compareMeterId);
+    const mData = meterData[compareMeterId];
+    if (!meter || !mData?.current.length) return;
+
+    setIsCalculatingAlt(true);
+    setAltResult(null);
 
     try {
-      // Find min and max dates of the fetched consumption
-      const sorted = [...consumptionData].sort((a,b) => new Date(a.interval_start).getTime() - new Date(b.interval_start).getTime());
-      const fromIso = sorted[0].interval_start;
-      const toIso = sorted[sorted.length-1].interval_end;
+      const sorted = [...mData.current].sort(
+        (a, b) => new Date(a.interval_start).getTime() - new Date(b.interval_start).getTime()
+      );
+      const periodFrom = toUtcIso(sorted[0].interval_start);
+      const periodTo = toUtcIso(sorted[sorted.length - 1].interval_end);
 
-      // Determine if we are modelling electricity or gas based on the currently selected meter
-      const meterInfo = allMeters.find(m => m.id === selectedMeterId);
-      const fuelType = meterInfo?.type.toLowerCase() === 'gas' ? 'gas' : 'electricity';
-      
-      const tariffCode = fuelType === 'gas' ? `G-1R-${selectedProduct}-G` : `E-1R-${selectedProduct}-G`; 
+      const regionLetter = baseline?.regionLetter ?? '_A';
+      const regionChar = regionLetter.replace('_', '');
+      const tariffCode = meter.fuelType === 'gas'
+        ? `G-1R-${selectedProduct}-${regionChar}`
+        : `E-1R-${selectedProduct}-${regionChar}`;
 
-      const rates = await CostEngine.fetchTariffRates(api, selectedProduct, tariffCode, fuelType, fromIso, toIso);
+      const [unitRates, standingCharges] = await Promise.all([
+        CostEngine.fetchTariffRates(api, selectedProduct, tariffCode, meter.fuelType, periodFrom, periodTo),
+        CostEngine.fetchStandingCharges(api, selectedProduct, tariffCode, meter.fuelType, periodFrom, periodTo),
+      ]);
 
-      const result = CostEngine.calculateCost(consumptionData, rates);
-      setCalcResult(result);
+      const result = CostEngine.calculateCost(mData.current, unitRates, standingCharges);
+      setAltResult(result);
 
-    } catch (err: any) {
-      alert("Error modelling cost: " + err.message);
+      const product = products.find(p => p.code === selectedProduct);
+      setAltProductName(product?.display_name ?? selectedProduct);
+    } catch (err: unknown) {
+      alert('Error modelling cost: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
-      setIsCalculating(false);
+      setIsCalculatingAlt(false);
     }
   };
+
+  // -----------------------------------------------------------------------
+  // Derived
+  // -----------------------------------------------------------------------
+
+  const property = account?.properties[0];
+  const importElec = meters.find(m => m.fuelType === 'electricity' && !m.isExport);
+  const activeAgreementLabel = useMemo(
+    () => getActiveAgreement(importElec?.point.agreements)?.tariff_code ?? null,
+    [importElec]
+  );
+
+  const anyLoading = Object.values(meterData).some(d => d.loading);
+
+  // -----------------------------------------------------------------------
+  // Render
+  // -----------------------------------------------------------------------
+
+  if (loading) {
+    return <div className="panel text-center text-secondary">Connecting to your account…</div>;
+  }
+  if (initError) {
+    return <div className="panel"><h3 style={{ color: 'var(--error-color)' }}>Connection Error</h3><p>{initError}</p></div>;
+  }
+  if (!account) return null;
 
   return (
     <div className="flex-col gap-4">
-      {/* Account Info */}
-      <div className="panel flex-col gap-2">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div>
-            <h2 style={{ marginBottom: 0 }}>Account {account.number}</h2>
-            {property?.address_line_1 && <p className="text-secondary" style={{ marginTop: '0.2rem' }}>{property.address_line_1}</p>}
-          </div>
-          <div className="panel" style={{ background: 'var(--bg-color)', padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <span className="text-secondary" style={{ fontSize: '0.85rem' }}>Select Meter:</span>
-            <select 
-              value={selectedMeterId} 
-              onChange={e => setSelectedMeterId(e.target.value)}
-              style={{ padding: '0.25rem', borderRadius: '4px', background: 'var(--panel-bg)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
-            >
-              {allMeters.map(m => (
-                <option key={m.id} value={m.id}>{m.type}: {m.id}</option>
-              ))}
-            </select>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Account header                                                      */}
+      {/* ------------------------------------------------------------------ */}
+      <div className="panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+        <div>
+          <h2 style={{ margin: 0 }}>Account {account.number}</h2>
+          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginTop: '0.2rem' }}>
+            {property?.address_line_1 && (
+              <span className="text-secondary" style={{ fontSize: '0.85rem' }}>
+                {[property.address_line_1, property.address_line_3, property.town].filter(Boolean).join(', ')}
+              </span>
+            )}
+            {activeAgreementLabel && (
+              <span className="text-secondary" style={{ fontSize: '0.85rem' }}>
+                Tariff: <strong style={{ color: 'var(--text-primary)' }}>{activeAgreementLabel}</strong>
+              </span>
+            )}
           </div>
         </div>
-      </div>
 
-      {/* Usage Section */}
-      <div className="panel flex-col gap-2">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <h2>Usage Data</h2>
-          <select 
-            value={timeframe} 
-            onChange={e => setTimeframe(e.target.value as Timeframe)}
-            style={{ padding: '0.5rem', borderRadius: '6px', background: 'var(--input-bg)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
+        {/* View switcher */}
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button
+            onClick={() => setAppView('usage')}
+            style={{
+              opacity: appView === 'usage' ? 1 : 0.5,
+              background: appView === 'usage' ? 'var(--accent-color)' : 'var(--input-bg)',
+              color: appView === 'usage' ? '#fff' : 'var(--text-primary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '6px', padding: '0.4rem 1rem', cursor: 'pointer', fontSize: '0.9rem',
+            }}
           >
-            <option value="7days">Last 7 Days</option>
-            <option value="30days">Last 30 Days</option>
-            <option value="1year">This Year</option>
-          </select>
-        </div>
-
-        {isFetchingUsage ? (
-          <div className="text-center text-secondary" style={{ padding: '3rem 0' }}>Fetching actual consumption data...</div>
-        ) : usageError ? (
-          <div className="text-center" style={{ color: 'var(--error-color)', padding: '2rem 0' }}>{usageError}</div>
-        ) : chartData.length > 0 ? (
-          <div style={{ width: '100%', height: 350, marginTop: '1rem' }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
-                <XAxis dataKey="date" stroke="var(--text-secondary)" tick={{fontSize: 12}} />
-                <YAxis stroke="var(--text-secondary)" tick={{fontSize: 12}} unit=" kWh" />
-                <Tooltip 
-                  cursor={{fill: 'rgba(255, 255, 255, 0.05)'}} 
-                  contentStyle={{ backgroundColor: 'var(--panel-bg)', borderColor: 'var(--border-color)', color: 'var(--text-primary)', borderRadius: '8px' }} 
-                />
-                <Bar dataKey="kWh" fill="var(--accent-color)" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        ) : (
-          <div className="text-center text-secondary" style={{ padding: '3rem 0', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <span>No consumption data found for this period.</span>
-            <span style={{ fontSize: '0.85rem', opacity: 0.8 }}>If you have multiple MPANs (like an export meter), try selecting a different one above, or select 'This Year'.</span>
-          </div>
-        )}
-      </div>
-
-      {/* Comparison Section */}
-      <div className="panel flex-col gap-2" style={{ opacity: isFetchingUsage ? 0.5 : 1, pointerEvents: isFetchingUsage ? 'none' : 'auto' }}>
-        <h2>Compare Tariffs</h2>
-        <p className="text-secondary">Model a tariff cost using the exact consumption data fetched above.</p>
-        
-        <div className="flex-row gap-2" style={{ alignItems: 'center', marginTop: '1rem' }}>
-          <select 
-            value={selectedProduct} 
-            onChange={e => setSelectedProduct(e.target.value)}
-            style={{ flex: 1, padding: '0.75rem', borderRadius: '6px', background: 'var(--input-bg)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
+            Usage
+          </button>
+          <button
+            onClick={() => setAppView('compare')}
+            style={{
+              opacity: appView === 'compare' ? 1 : 0.5,
+              background: appView === 'compare' ? 'var(--accent-color)' : 'var(--input-bg)',
+              color: appView === 'compare' ? '#fff' : 'var(--text-primary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '6px', padding: '0.4rem 1rem', cursor: 'pointer', fontSize: '0.9rem',
+            }}
           >
-            {products.map(p => (
-              <option key={p.code} value={p.code}>{p.display_name} ({p.code})</option>
-            ))}
-          </select>
-          <button onClick={runComparison} disabled={isCalculating || !consumptionData.length}>
-            {isCalculating ? 'Modelling Costs...' : 'Model Costs ➔'}
+            Compare
           </button>
         </div>
+      </div>
 
-        {calcResult && (
-          <div className="mt-2 text-center" style={{ padding: '1.5rem', border: '1px dashed var(--accent-color)', borderRadius: '8px', background: 'rgba(229, 0, 122, 0.05)' }}>
-            <h3 style={{ margin: '0 0 1rem 0' }}>Modelled Assessment (Against Usage Data)</h3>
-            <div className="flex-row gap-4" style={{ justifyContent: 'center' }}>
-              <div className="flex-col">
-                <span className="text-secondary" style={{ fontSize: '0.9rem' }}>Total Cost</span>
-                <span style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>£{(calcResult.totalCostPence / 100).toFixed(2)}</span>
+      {/* ------------------------------------------------------------------ */}
+      {/* USAGE VIEW                                                          */}
+      {/* ------------------------------------------------------------------ */}
+      {appView === 'usage' && (
+        <>
+          {/* Timeframe selector */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: '0.4rem' }}>
+              {(['7days', '30days', '1year'] as Timeframe[]).map(tf => (
+                <button
+                  key={tf}
+                  onClick={() => setTimeframe(tf)}
+                  style={{
+                    padding: '0.35rem 0.85rem', fontSize: '0.85rem', borderRadius: '6px',
+                    cursor: 'pointer', border: '1px solid var(--border-color)',
+                    background: timeframe === tf ? 'var(--accent-color)' : 'var(--input-bg)',
+                    color: timeframe === tf ? '#fff' : 'var(--text-primary)',
+                  }}
+                >
+                  {tf === '7days' ? '7 days' : tf === '30days' ? '30 days' : '12 months'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {anyLoading && Object.keys(meterData).length === 0 && (
+            <div className="panel text-center text-secondary" style={{ padding: '3rem' }}>
+              Loading meter data…
+            </div>
+          )}
+
+          {/* One panel per meter */}
+          {meters.map(meter => {
+            const data = meterData[meter.id];
+            if (!data) return null;
+            return <MeterPanel key={meter.id} data={data} timeframe={timeframe} />;
+          })}
+        </>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* COMPARE VIEW                                                        */}
+      {/* ------------------------------------------------------------------ */}
+      {appView === 'compare' && (
+        <div className="panel flex-col gap-3">
+          <div>
+            <h2 style={{ margin: '0 0 0.25rem 0' }}>Tariff Comparison</h2>
+            <p className="text-secondary" style={{ margin: 0, fontSize: '0.87rem' }}>
+              What would your consumption have cost on a different tariff? Uses the same data already loaded.
+            </p>
+          </div>
+
+          {/* Meter + product selectors */}
+          <div className="flex-col gap-2">
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              <div className="flex-col gap-1" style={{ flex: '0 0 auto' }}>
+                <label className="text-secondary" style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Meter</label>
+                <select
+                  value={compareMeterId}
+                  onChange={e => { setCompareMeterId(e.target.value); setAltResult(null); setBaseline(null); }}
+                  style={{ padding: '0.6rem', borderRadius: '6px', background: 'var(--input-bg)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
+                >
+                  {meters.map(m => (
+                    <option key={m.id} value={m.id}>{m.label}: {m.id}</option>
+                  ))}
+                </select>
               </div>
-              <div className="flex-col">
-                <span className="text-secondary" style={{ fontSize: '0.9rem' }}>Consumption</span>
-                <span style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{calcResult.totalConsumptionKwh.toFixed(1)} kWh</span>
+              <div className="flex-col gap-1" style={{ flex: 1, minWidth: 200 }}>
+                <label className="text-secondary" style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Compare against</label>
+                <select
+                  value={selectedProduct}
+                  onChange={e => { setSelectedProduct(e.target.value); setAltResult(null); }}
+                  style={{ padding: '0.6rem', borderRadius: '6px', background: 'var(--input-bg)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', width: '100%' }}
+                >
+                  {products.map(p => (
+                    <option key={p.code} value={p.code}>{p.display_name} ({p.code})</option>
+                  ))}
+                </select>
               </div>
-              <div className="flex-col">
-                <span className="text-secondary" style={{ fontSize: '0.9rem' }}>Avg Rate</span>
-                <span style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{calcResult.averagePencePerKwh.toFixed(1)}p / kWh</span>
+              <div className="flex-col gap-1" style={{ justifyContent: 'flex-end', paddingBottom: '0' }}>
+                <label style={{ fontSize: '0.8rem', visibility: 'hidden' }}>Run</label>
+                <button
+                  onClick={runComparison}
+                  disabled={isCalculatingAlt || !meterData[compareMeterId]?.current.length}
+                >
+                  {isCalculatingAlt ? 'Modelling…' : 'Model Costs →'}
+                </button>
               </div>
             </div>
           </div>
-        )}
-      </div>
+
+          {/* Comparison table */}
+          {baseline && (
+            <div className="flex-col gap-2">
+              <div className="text-secondary" style={{
+                display: 'grid', gridTemplateColumns: '1fr repeat(4, auto)',
+                gap: '1rem', padding: '0 1rem',
+                fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em',
+              }}>
+                <span>Tariff</span>
+                <span style={{ textAlign: 'right', minWidth: 70 }}>kWh</span>
+                <span style={{ textAlign: 'right', minWidth: 80 }}>Total Cost</span>
+                <span style={{ textAlign: 'right', minWidth: 80 }}>Avg Rate</span>
+                <span style={{ textAlign: 'right', minWidth: 90 }}>vs Current</span>
+              </div>
+
+              <ComparisonRow
+                label={baseline.tariffCode}
+                result={baseline.current}
+                isCurrent={baseline.tariffCode !== 'Unknown'}
+              />
+              <ComparisonRow
+                label="Ofgem Price Cap"
+                result={baseline.ofgem}
+                baseline={baseline.tariffCode !== 'Unknown' ? baseline.current : undefined}
+                isOfgem
+              />
+              {altResult && (
+                <ComparisonRow
+                  label={altProductName}
+                  result={altResult}
+                  baseline={baseline.tariffCode !== 'Unknown' ? baseline.current : undefined}
+                />
+              )}
+            </div>
+          )}
+
+          {!baseline && meterData[compareMeterId]?.current.length === 0 && !anyLoading && (
+            <p className="text-secondary" style={{ fontSize: '0.87rem' }}>
+              No consumption data loaded for this meter. Switch to Usage view and ensure data is available.
+            </p>
+          )}
+
+          {!baseline && meterData[compareMeterId]?.current.length > 0 && !anyLoading && (
+            <p className="text-secondary" style={{ fontSize: '0.87rem' }}>
+              Current tariff baseline is still loading…
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,17 +1,45 @@
 const BASE_URL = 'https://api.octopus.energy/v1';
 
+/**
+ * Convert any date string or Date to a UTC ISO-8601 string (ending in Z).
+ * The Octopus API rejects period parameters with timezone offsets (+01:00 etc).
+ */
+export function toUtcIso(date: string | Date): string {
+  return new Date(date).toISOString();
+}
+
+export interface MeterRegister {
+  identifier: string;
+  rate: string;
+  is_settlement_register: boolean;
+}
+
 export interface Meter {
   serial_number: string;
+  registers?: MeterRegister[];
+}
+
+export interface Agreement {
+  tariff_code: string;
+  valid_from: string;
+  valid_to: string | null;
 }
 
 export interface MeterPoint {
   mpan?: string; // Electricity
   mprn?: string; // Gas
   meters: Meter[];
+  agreements?: Agreement[];
+  is_export?: boolean; // true for solar/generation export MPANs
 }
 
 export interface Property {
   address_line_1: string;
+  address_line_2?: string;
+  address_line_3?: string;
+  town?: string;
+  county?: string;
+  postcode?: string;
   electricity_meter_points: MeterPoint[];
   gas_meter_points: MeterPoint[];
 }
@@ -34,7 +62,7 @@ export interface Product {
 }
 
 export interface ConsumptionResult {
-  consumption: number; // kWh
+  consumption: number; // kWh (or m³ for SMETS1 gas)
   interval_start: string;
   interval_end: string;
 }
@@ -69,31 +97,52 @@ export class OctopusApi {
     return res.json();
   }
 
+  /** Fetches all available domestic products across all pages. */
   async getProducts(): Promise<{ results: Product[] }> {
-    const url = `${BASE_URL}/products/?is_available=true&is_business=false`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('Failed to fetch tariffs.');
-    return res.json();
+    const url = `${BASE_URL}/products/?is_available=true&is_business=false&page_size=100`;
+    const results = await this.fetchAllPages<Product>(url);
+    return { results };
   }
 
-  // Generalized paginated fetcher
+  // Generalised paginated fetcher
   async fetchAllPages<T>(url: string): Promise<T[]> {
     let results: T[] = [];
     let nextUrl: string | null = url;
 
     while (nextUrl) {
-      // Must attach auth headers even to paginated URLs since they hit API endpoints requiring it (e.g., consumption)
+      // Attach auth headers for authenticated endpoints; products endpoint is public
       const isPublic = nextUrl.includes('/products/');
       const opts = isPublic ? undefined : { headers: this.headers };
-      
+
       const res = await fetch(nextUrl, opts);
       if (!res.ok) throw new Error(`Failed to fetch from ${nextUrl}`);
       const data = await res.json();
-      
+
       if (data.results) results = results.concat(data.results);
       nextUrl = data.next;
     }
     return results;
+  }
+
+  /**
+   * Find the active serial number for a meter point by trying each listed serial
+   * in order of preference (settlement register with a named rate first) and
+   * returning the first one that actually has consumption data.
+   */
+  async findActiveSerial(
+    fuelType: 'electricity' | 'gas',
+    id: string,
+    serials: string[]
+  ): Promise<string | null> {
+    for (const serial of serials) {
+      const ep = fuelType === 'electricity' ? `electricity-meter-points/${id}` : `gas-meter-points/${id}`;
+      const url = `${BASE_URL}/${ep}/meters/${serial}/consumption/?page_size=1`;
+      const res = await fetch(url, { headers: this.headers });
+      if (!res.ok) continue;
+      const data = await res.json() as ConsumptionResponse;
+      if (data.results?.length) return serial;
+    }
+    return null;
   }
 
   async getLatestConsumptionDate(fuelType: 'electricity' | 'gas', id: string, serial: string): Promise<string | null> {

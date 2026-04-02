@@ -54,7 +54,15 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
         </form>
         
         <p className="text-secondary text-center mt-2" style={{ fontSize: '0.8rem', opacity: 0.7 }}>
-          Your API key is only stored in your browser's memory and is never sent to any server other than Octopus Energy directly.
+          Your API key is only stored in your browser's memory and is never sent to any server other than Octopus Energy directly.{' '}
+          <a
+            href="https://octopus.energy/dashboard/new/accounts/personal-details/api-access"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: 'var(--accent-color)' }}
+          >
+            Find your API key
+          </a>
         </p>
       </div>
     </div>
