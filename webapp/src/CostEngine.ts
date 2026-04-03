@@ -22,6 +22,10 @@ export interface CostCalculation {
   averagePencePerKwh: number;
   /** Number of days the period spans (for standing charge calculation) */
   periodDays: number;
+  /** Earliest slot included in this calculation (ISO string) */
+  coveredFrom?: string;
+  /** Latest slot included in this calculation (ISO string) */
+  coveredTo?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -219,8 +223,10 @@ export class CostEngine {
   ): Promise<Rate[]> {
     const endpoint = fuelType === 'electricity' ? 'electricity-tariffs' : 'gas-tariffs';
     const url = `https://api.octopus.energy/v1/products/${productCode}/${endpoint}/${tariffCode}/standard-unit-rates/?page_size=1500&period_from=${toUtcIso(periodFrom)}&period_to=${toUtcIso(periodTo)}`;
-    const rates = await api.fetchAllPages<{ valid_from: string; valid_to: string; value_inc_vat: number }>(url);
-    return rates;
+    const rates = await api.fetchAllPages<{ valid_from: string; valid_to: string; value_inc_vat: number; payment_method: string | null }>(url);
+    // Keep only DIRECT_DEBIT or payment_method-agnostic rates — exclude NON_DIRECT_DEBIT
+    // to avoid double-counting when both variants are returned for the same period
+    return rates.filter(r => !r.payment_method || r.payment_method === 'DIRECT_DEBIT');
   }
 
   static async fetchStandingCharges(
@@ -233,8 +239,8 @@ export class CostEngine {
   ): Promise<Rate[]> {
     const endpoint = fuelType === 'electricity' ? 'electricity-tariffs' : 'gas-tariffs';
     const url = `https://api.octopus.energy/v1/products/${productCode}/${endpoint}/${tariffCode}/standing-charges/?page_size=1500&period_from=${toUtcIso(periodFrom)}&period_to=${toUtcIso(periodTo)}`;
-    const rates = await api.fetchAllPages<{ valid_from: string; valid_to: string; value_inc_vat: number }>(url);
-    return rates;
+    const rates = await api.fetchAllPages<{ valid_from: string; valid_to: string; value_inc_vat: number; payment_method: string | null }>(url);
+    return rates.filter(r => !r.payment_method || r.payment_method === 'DIRECT_DEBIT');
   }
 
   /**
@@ -253,7 +259,31 @@ export class CostEngine {
       return { unitCostPence: 0, standingChargePence: 0, totalCostPence: 0, totalConsumptionKwh: 0, averagePencePerKwh: 0, periodDays: 0 };
     }
 
-    const sorted = [...consumption].sort(
+    // Determine the window actually covered by the unit rates.
+    // Only use rates that have an explicit valid_to to determine the end boundary —
+    // open-ended rates (valid_to: null) mean the tariff is still active, so we cap
+    // at the latest consumption slot rather than including everything to infinity.
+    const ratesWithEnd = unitRates.filter(r => r.valid_to !== null);
+    const rateStart = unitRates.length
+      ? Math.min(...unitRates.map(r => r.valid_from ? new Date(r.valid_from).getTime() : 0))
+      : 0;
+    const rateEnd = ratesWithEnd.length
+      ? Math.max(...ratesWithEnd.map(r => new Date(r.valid_to!).getTime()))
+      : Infinity; // all rates are open-ended — full coverage, no filtering needed
+
+    // Filter consumption to only slots covered by the rates
+    const covered = rateEnd === Infinity
+      ? consumption  // full coverage — no filtering needed
+      : consumption.filter(r => {
+          const t = new Date(r.interval_start).getTime();
+          return t >= rateStart && t < rateEnd;
+        });
+
+    if (!covered.length) {
+      return { unitCostPence: 0, standingChargePence: 0, totalCostPence: 0, totalConsumptionKwh: 0, averagePencePerKwh: 0, periodDays: 0 };
+    }
+
+    const sorted = [...covered].sort(
       (a, b) => new Date(a.interval_start).getTime() - new Date(b.interval_start).getTime()
     );
     const periodFrom = new Date(sorted[0].interval_start);
@@ -324,6 +354,8 @@ export class CostEngine {
       totalConsumptionKwh,
       averagePencePerKwh: totalConsumptionKwh > 0 ? unitCostPence / totalConsumptionKwh : 0,
       periodDays,
+      coveredFrom: sorted[0].interval_start,
+      coveredTo: sorted[sorted.length - 1].interval_end,
     };
   }
 }

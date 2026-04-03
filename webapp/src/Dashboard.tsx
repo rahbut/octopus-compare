@@ -629,9 +629,9 @@ const MeterPanel = React.memo(function MeterPanel({
             )}
             {currentCost && (
               <SummaryCard
-                label="Avg Rate"
+                label="Effective Rate"
                 value={`${currentCost.averagePencePerKwh.toFixed(1)}p/kWh`}
-                sub="unit rate only"
+                sub="unit cost ÷ consumption"
               />
             )}
             {hasPrior && kwhDelta !== null && (
@@ -1230,11 +1230,12 @@ export function Dashboard({ api }: DashboardProps) {
     // If the user is on a Tracker tariff and there's a newer version available, inject it.
     // Tracker products are restricted and don't appear in the public product list.
     const extraProducts: Array<{ code: string; full_name: string; tariffCode: string }> = [];
-    if (!meter.isExport && meter.fuelType === 'electricity' && trackerData?.currentTrackerProduct) {
+    if (!meter.isExport && trackerData?.currentTrackerProduct) {
       const ct = trackerData.currentTrackerProduct;
-      // Only add if it's not the same as the user's current tariff
       if (ct.productCode !== bl.productCode) {
-        extraProducts.push({ code: ct.productCode, full_name: ct.fullName, tariffCode: ct.tariffCode });
+        const fuelPrefix = meter.fuelType === 'gas' ? 'G' : 'E';
+        const tariffCode = `${fuelPrefix}-1R-${ct.productCode}-${regionChar}`;
+        extraProducts.push({ code: ct.productCode, full_name: ct.fullName, tariffCode });
       }
     }
 
@@ -1262,8 +1263,8 @@ export function Dashboard({ api }: DashboardProps) {
     const extraTasks = extraProducts.map(async product => {
       try {
         const [unitRates, standingCharges] = await Promise.all([
-          CostEngine.fetchTariffRates(api, product.code, product.tariffCode, 'electricity', periodFrom, periodTo),
-          CostEngine.fetchStandingCharges(api, product.code, product.tariffCode, 'electricity', periodFrom, periodTo),
+          CostEngine.fetchTariffRates(api, product.code, product.tariffCode, meter.fuelType, periodFrom, periodTo),
+          CostEngine.fetchStandingCharges(api, product.code, product.tariffCode, meter.fuelType, periodFrom, periodTo),
         ]);
         accumulated[product.code] = CostEngine.calculateCost(consumption, unitRates, standingCharges);
       } catch {
@@ -1312,7 +1313,7 @@ export function Dashboard({ api }: DashboardProps) {
       ? exportProducts
       : products.filter(p => compareFuelType === 'gas' ? p.has_gas : p.has_electricity);
     // Inject the current Tracker version if the user is on a Tracker tariff and it's not already listed
-    if (!compareIsExport && compareFuelType === 'electricity' && trackerData?.currentTrackerProduct) {
+    if (!compareIsExport && trackerData?.currentTrackerProduct) {
       const ct = trackerData.currentTrackerProduct;
       const baseline = baselines[compareMeterId];
       if (!base.find(p => p.code === ct.productCode) && ct.productCode !== baseline?.productCode) {
@@ -1327,7 +1328,7 @@ export function Dashboard({ api }: DashboardProps) {
           is_prepay: false,
           is_business: false,
           has_electricity: true,
-          has_gas: false,
+          has_gas: true,
         }];
       }
     }
@@ -1347,29 +1348,36 @@ export function Dashboard({ api }: DashboardProps) {
       if (!bR) return -1;
       const baseline = baselines[compareMeterId];
       const hasBaseline = baseline?.tariffCode !== 'Unknown';
+      const fullDays = baseline?.current.periodDays || 1;
+      // Compare on daily cost so partial-coverage tariffs sort fairly
+      const dailyCostA = aR.totalCostPence / Math.max(aR.periodDays || 1, 1);
+      const dailyCostB = bR.totalCostPence / Math.max(bR.periodDays || 1, 1);
       let diff = 0;
       if (sortCol === 'name') diff = a.name.localeCompare(b.name);
-      else if (sortCol === 'cost') diff = aR.totalCostPence - bR.totalCostPence;
+      else if (sortCol === 'cost') diff = dailyCostA - dailyCostB;
       else if (sortCol === 'rate') diff = aR.averagePencePerKwh - bR.averagePencePerKwh;
       else if (sortCol === 'delta') {
-        const base = hasBaseline ? baseline.current.totalCostPence : 0;
-        diff = (aR.totalCostPence - base) - (bR.totalCostPence - base);
+        const baselineForA = hasBaseline ? (baseline.current.totalCostPence / fullDays) * Math.max(aR.periodDays || 1, 1) : 0;
+        const baselineForB = hasBaseline ? (baseline.current.totalCostPence / fullDays) * Math.max(bR.periodDays || 1, 1) : 0;
+        diff = (aR.totalCostPence - baselineForA) - (bR.totalCostPence - baselineForB);
       }
       return sortAsc ? diff : -diff;
     });
   }, [activeProductList, altResults, sortCol, sortAsc, baselines, compareMeterId]);
 
-  // O(N) single pass to find the best product code — used for the badge
+  // O(N) single pass to find the best product code — uses daily cost for fair partial comparison
   const bestProductCode = useMemo(() => {
     const resolved = sortedCompareRows.filter(r => r.result != null) as Array<{ code: string; name: string; result: CostCalculation }>;
     if (!resolved.length) return null;
     const baseline = baselines[compareMeterId];
     if (!baseline) return null;
+    const fullDays = baseline.current.periodDays || 1;
+    const dailyCost = (r: CostCalculation) => r.totalCostPence / Math.max(r.periodDays || 1, 1);
+    const baselineDaily = baseline.current.totalCostPence / fullDays;
     const best = compareIsExport
-      ? resolved.reduce((a, b) => a.result.totalCostPence >= b.result.totalCostPence ? a : b)
-      : resolved.reduce((a, b) => a.result.totalCostPence <= b.result.totalCostPence ? a : b);
-    // Only badge it if it actually beats the current tariff
-    const delta = best.result.totalCostPence - baseline.current.totalCostPence;
+      ? resolved.reduce((a, b) => dailyCost(a.result) >= dailyCost(b.result) ? a : b)
+      : resolved.reduce((a, b) => dailyCost(a.result) <= dailyCost(b.result) ? a : b);
+    const delta = dailyCost(best.result) - baselineDaily;
     if (compareIsExport && delta <= 0) return null;
     if (!compareIsExport && delta >= 0) return null;
     return best.code;
@@ -1651,7 +1659,7 @@ export function Dashboard({ api }: DashboardProps) {
                            Standing
                          </th>
                          <th style={thStyle('rate')} onClick={() => handleSort('rate')}>
-                           Avg Unit Rate <SortIndicator col="rate" />
+                           Effective Rate <SortIndicator col="rate" />
                          </th>
                          {hasCurrentBaseline && (
                            <th style={thStyle('delta')} onClick={() => handleSort('delta')}>
@@ -1718,34 +1726,49 @@ export function Dashboard({ api }: DashboardProps) {
                              </tr>
                            );
                          }
-                         const delta = hasCurrentBaseline ? result.totalCostPence - baseline.current.totalCostPence : null;
-                         // Export: higher payout = good (green); import: lower cost = good (green)
+                         const isBest = row.code === bestProductCode;
+                         const fullDays = baseline.current.periodDays || 1;
+                         const coveredDays = result.periodDays || 1;
+                         const isPartial = coveredDays < fullDays - 1;
+
+                         // For a fair comparison, compare this tariff's cost over its covered days
+                         // against what the current tariff cost over those same days.
+                         // We use baseline's average daily cost × coveredDays as the baseline reference.
+                         const baselineForSamePeriod = hasCurrentBaseline
+                           ? (baseline.current.totalCostPence / fullDays) * coveredDays
+                           : null;
+                         const delta = baselineForSamePeriod !== null
+                           ? result.totalCostPence - baselineForSamePeriod
+                           : null;
                          const deltaColor = delta === null ? undefined
                            : isExportMeter
                              ? (delta > 0 ? 'var(--success-color)' : delta < 0 ? 'var(--error-color)' : 'var(--text-secondary)')
                              : (delta < 0 ? 'var(--success-color)' : delta > 0 ? 'var(--error-color)' : 'var(--text-secondary)');
-                          const isBest = row.code === bestProductCode;
 
-                        return (
-                          <tr key={row.code} style={{ background: isEven ? 'transparent' : 'rgba(255,255,255,0.02)' }}>
-                            <td style={cellStyle()}>
-                              {row.name}
-                              {isBest && <span style={{ marginLeft: '0.5rem', fontSize: '0.68rem', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'var(--success-color)', color: '#000', verticalAlign: 'middle' }}>{isExportMeter ? 'best rate' : 'cheapest'}</span>}
-                              <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{row.code}</span>
-                            </td>
-                            <td style={{ ...cellStyle(true), fontWeight: 600 }}>{penceToGBP(result.totalCostPence)}</td>
-                            <td style={{ ...cellStyle(true), color: 'var(--text-secondary)' }}>{penceToGBP(result.standingChargePence)}</td>
-                            <td style={cellStyle(true)}>{result.averagePencePerKwh.toFixed(2)}p/kWh</td>
-                            {hasCurrentBaseline && (
-                              <td style={{ ...cellStyle(true), color: deltaColor, fontWeight: delta ? 600 : 400 }}>
-                                {delta === null ? '—'
-                                 : isExportMeter
-                                   ? (delta > 0 ? `+${penceToGBP(delta)} more` : delta < 0 ? `-${penceToGBP(Math.abs(delta))} less` : 'Same')
-                                   : (delta < 0 ? `Save ${penceToGBP(Math.abs(delta))}` : delta > 0 ? `+${penceToGBP(delta)}` : 'Same')}
-                              </td>
-                            )}
-                          </tr>
-                        );
+                         return (
+                           <tr key={row.code} style={{ background: isEven ? 'transparent' : 'rgba(255,255,255,0.02)' }}>
+                             <td style={cellStyle()}>
+                               {row.name}
+                               {isBest && <span style={{ marginLeft: '0.5rem', fontSize: '0.68rem', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'var(--success-color)', color: '#000', verticalAlign: 'middle' }}>{isExportMeter ? 'best rate' : 'cheapest'}</span>}
+                               <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{row.code}</span>
+                               {isPartial && <span style={{ display: 'block', fontSize: '0.68rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>{coveredDays}d of data</span>}
+                             </td>
+                             <td style={{ ...cellStyle(true), fontWeight: 600 }}>
+                               {penceToGBP(result.totalCostPence)}
+                               {isPartial && <span style={{ fontSize: '0.68rem', fontWeight: 400, color: 'var(--text-secondary)' }}> /{coveredDays}d</span>}
+                             </td>
+                             <td style={{ ...cellStyle(true), color: 'var(--text-secondary)' }}>{penceToGBP(result.standingChargePence)}</td>
+                             <td style={cellStyle(true)}>{result.averagePencePerKwh.toFixed(2)}p/kWh</td>
+                             {hasCurrentBaseline && (
+                               <td style={{ ...cellStyle(true), color: deltaColor, fontWeight: delta ? 600 : 400 }}>
+                                 {delta === null ? '—'
+                                  : isExportMeter
+                                    ? (delta > 0 ? `+${penceToGBP(delta)} more` : delta < 0 ? `-${penceToGBP(Math.abs(delta))} less` : 'Same')
+                                    : (delta < 0 ? `Save ${penceToGBP(Math.abs(delta))}` : delta > 0 ? `+${penceToGBP(delta)}` : 'Same')}
+                               </td>
+                             )}
+                           </tr>
+                         );
                       })}
                     </tbody>
                   </table>

@@ -254,7 +254,8 @@ export class OctopusApi {
     let url = `${BASE_URL}/products/${productCode}/${endpoint}/${tariffCode}/standard-unit-rates/?page_size=1500`;
     if (periodFrom) url += `&period_from=${toUtcIso(periodFrom)}`;
     if (periodTo) url += `&period_to=${toUtcIso(periodTo)}`;
-    return this.fetchAllPages(url);
+    const rates = await this.fetchAllPages<{ value_inc_vat: number; valid_from: string; valid_to: string | null; payment_method: string | null }>(url);
+    return rates.filter(r => !r.payment_method || r.payment_method === 'DIRECT_DEBIT');
   }
 
   /**
@@ -266,12 +267,13 @@ export class OctopusApi {
     fuelType: 'electricity' | 'gas',
     periodFrom?: string,
     periodTo?: string,
-  ): Promise<{ value_inc_vat: number; valid_from: string; valid_to: string | null }[]> {
+  ): Promise<{ value_inc_vat: number; valid_from: string; valid_to: string | null; payment_method: string | null }[]> {
     const endpoint = fuelType === 'electricity' ? 'electricity-tariffs' : 'gas-tariffs';
     let url = `${BASE_URL}/products/${productCode}/${endpoint}/${tariffCode}/standing-charges/?page_size=1500`;
     if (periodFrom) url += `&period_from=${toUtcIso(periodFrom)}`;
     if (periodTo) url += `&period_to=${toUtcIso(periodTo)}`;
-    return this.fetchAllPages(url);
+    const rates = await this.fetchAllPages<{ value_inc_vat: number; valid_from: string; valid_to: string | null; payment_method: string | null }>(url);
+    return rates.filter(r => !r.payment_method || r.payment_method === 'DIRECT_DEBIT');
   }
 
   /**
