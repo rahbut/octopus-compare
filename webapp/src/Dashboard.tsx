@@ -15,15 +15,16 @@ import {
   calculateOfgemCapCost,
 } from './CostEngine';
 import {
+  ComposedChart,
   BarChart,
   Bar,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
   Legend,
-  ReferenceLine,
 } from 'recharts';
 
 // ---------------------------------------------------------------------------
@@ -78,11 +79,17 @@ interface TrackerDayRate {
   valid_from: string;  // raw ISO from API
 }
 
+interface SvtRateEntry {
+  valid_from: string;       // ISO UTC
+  valid_to: string | null;  // ISO UTC or null (= current)
+  value_inc_vat: number;    // p/kWh
+}
+
 interface TrackerFuelData {
   /** Daily rates for the selected period, sorted oldest-first */
   rates: TrackerDayRate[];
-  /** SVT flat rate p/kWh */
-  svtRate: number | null;
+  /** Full SVT rate history for the period, sorted newest-first */
+  svtRates: SvtRateEntry[];
   /** Cost on Tracker tariff */
   trackerCost: CostCalculation | null;
   /** Cost on SVT */
@@ -320,7 +327,7 @@ function TrackerFuelSection({
   timeframe: Timeframe;
   accentColor: string;
 }) {
-  const { rates, svtRate, trackerCost, svtCost } = fuelData;
+  const { rates, svtRates, trackerCost, svtCost } = fuelData;
 
   const now = new Date();
   const todayKey = localDateKey(now);
@@ -331,16 +338,49 @@ function TrackerFuelSection({
   const tomorrowRate = rates.find(r => r.date === tomorrowKey);
   const yesterdayRate = rates.find(r => r.date === yesterdayKey);
 
+  /** Find the SVT rate applicable on a given local date key (YYYY-MM-DD).
+   *  svtRates is sorted oldest-first; we want the last entry whose valid_from
+   *  is on or before noon local time on that date. */
+  const svtRateOnDate = useCallback((dateKey: string): number | null => {
+    if (svtRates.length === 0) return null;
+    const noon = new Date(dateKey + 'T12:00:00').getTime();
+    let match: SvtRateEntry | null = null;
+    for (const entry of svtRates) {
+      if (new Date(entry.valid_from).getTime() <= noon) {
+        match = entry;
+      } else {
+        break;
+      }
+    }
+    return match?.value_inc_vat ?? null;
+  }, [svtRates]);
+
+  /** Current SVT rate = most recent entry with valid_from <= now */
+  const currentSvtRate = useMemo((): number | null => {
+    if (svtRates.length === 0) return null;
+    const nowMs = now.getTime();
+    let match: SvtRateEntry | null = null;
+    for (const entry of svtRates) {
+      if (new Date(entry.valid_from).getTime() <= nowMs) match = entry;
+      else break;
+    }
+    return match?.value_inc_vat ?? null;
+  }, [svtRates, now]);
+
   const chartData = useMemo(() => {
     const days = timeframeDays(timeframe);
     return rates.slice(-days).map(r => ({
       date: r.label,
       dow: new Date(r.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short' }),
       rate: r.rateIncVat,
+      svt: svtRateOnDate(r.date),
     }));
-  }, [rates, timeframe]);
+  }, [rates, timeframe, svtRateOnDate]);
 
   const savingPence = trackerCost && svtCost ? svtCost.totalCostPence - trackerCost.totalCostPence : null;
+  // Unit-cost delta (excluding standing charge) — helps explain when unit rates look cheaper but total is higher
+  const unitSavingPence = trackerCost && svtCost ? svtCost.unitCostPence - trackerCost.unitCostPence : null;
+  const scDeltaPence = trackerCost && svtCost ? trackerCost.standingChargePence - svtCost.standingChargePence : null;
 
   const rateCard = (highlighted: boolean, faded: boolean): React.CSSProperties => ({
     flex: '1 1 120px', padding: '0.85rem 1rem', borderRadius: '8px',
@@ -395,13 +435,13 @@ function TrackerFuelSection({
           })()}
         </div>
 
-        {svtRate !== null && (
+        {currentSvtRate !== null && (
           <div style={rateCard(false, false)}>
             <div className="text-secondary" style={{ fontSize: '0.75rem', marginBottom: '0.35rem' }}>Flexible Octopus</div>
-            <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{svtRate.toFixed(2)}p</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{currentSvtRate.toFixed(2)}p</div>
             <div className="text-secondary" style={{ fontSize: '0.72rem' }}>per kWh (flat)</div>
             {todayRate && (() => {
-              const diff = todayRate.rateIncVat - svtRate;
+              const diff = todayRate.rateIncVat - currentSvtRate;
               const cheaper = diff < 0;
               return (
                 <div style={{ fontSize: '0.72rem', marginTop: '0.3rem', color: cheaper ? 'var(--success-color)' : 'var(--error-color)' }}>
@@ -417,7 +457,7 @@ function TrackerFuelSection({
       {chartData.length > 1 && (
         <div style={{ width: '100%', height: 200 }}>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }} barCategoryGap="20%">
+            <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }} barCategoryGap="20%">
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
               <XAxis dataKey="date" stroke="var(--text-secondary)"
                 interval={timeframe === '1year' ? Math.floor(chartData.length / 12) : timeframe === '7days' ? 0 : 'preserveStartEnd'}
@@ -432,15 +472,27 @@ function TrackerFuelSection({
                 cursor={{ fill: 'rgba(255,255,255,0.04)' }}
                 contentStyle={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)', color: 'var(--text-primary)', borderRadius: '8px', fontSize: '0.85rem' }}
                 wrapperStyle={{ opacity: 1, zIndex: 10 }}
-                formatter={(v: unknown) => [`${(v as number).toFixed(2)}p/kWh`, 'Tracker rate']}
+                formatter={(v: unknown, name: unknown) => {
+                  const val = (v as number).toFixed(2);
+                  return name === 'svt' ? [`${val}p/kWh`, 'Flexible Octopus'] : [`${val}p/kWh`, 'Tracker rate'];
+                }}
               />
-              {svtRate !== null && (
-                <ReferenceLine y={svtRate} stroke="var(--text-secondary)" strokeDasharray="6 3"
-                  label={{ value: `SVT ${svtRate.toFixed(1)}p`, position: 'insideTopRight', fill: 'var(--text-secondary)', fontSize: 11 }}
+              <Bar dataKey="rate" name="Tracker rate" fill={accentColor} radius={[3, 3, 0, 0]} />
+              {svtRates.length > 0 && (
+                <Line
+                  dataKey="svt"
+                  name="svt"
+                  type="stepAfter"
+                  dot={false}
+                  activeDot={{ r: 3 }}
+                  stroke="var(--text-secondary)"
+                  strokeDasharray="6 3"
+                  strokeWidth={1.5}
+                  connectNulls={false}
+                  legendType="none"
                 />
               )}
-              <Bar dataKey="rate" name="Tracker rate" fill={accentColor} radius={[3, 3, 0, 0]} />
-            </BarChart>
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
       )}
@@ -462,15 +514,24 @@ function TrackerFuelSection({
               <div className="text-secondary" style={{ fontSize: '0.7rem' }}>{svtCost.averagePencePerKwh.toFixed(2)}p avg · {penceToGBP(svtCost.standingChargePence)} standing</div>
             </div>
           )}
-          {savingPence !== null && (
+          {savingPence !== null && unitSavingPence !== null && scDeltaPence !== null && (
             <div style={{ flex: '1 1 130px' }}>
               <div className="text-secondary" style={{ fontSize: '0.72rem', marginBottom: '0.2rem' }}>
-                {savingPence > 0 ? 'You saved' : 'You paid extra'}
+                {savingPence > 0 ? 'You saved' : 'You paid extra'} (total inc. standing)
               </div>
               <div style={{ fontSize: '1.25rem', fontWeight: 700, color: savingPence > 0 ? 'var(--success-color)' : 'var(--error-color)' }}>
                 {penceToGBP(Math.abs(savingPence))}
               </div>
-              <div className="text-secondary" style={{ fontSize: '0.7rem' }}>vs Flexible Octopus</div>
+              <div className="text-secondary" style={{ fontSize: '0.7rem' }}>
+                {unitSavingPence >= 0
+                  ? `${penceToGBP(unitSavingPence)} cheaper on units`
+                  : `${penceToGBP(Math.abs(unitSavingPence))} more on units`}
+                {scDeltaPence > 0
+                  ? `, but ${penceToGBP(scDeltaPence)} more on standing charge`
+                  : scDeltaPence < 0
+                    ? `, ${penceToGBP(Math.abs(scDeltaPence))} less on standing charge`
+                    : ''}
+              </div>
             </div>
           )}
         </div>
@@ -1021,7 +1082,7 @@ export function Dashboard({ api }: DashboardProps) {
     setTrackerData(prev => ({
       ...(prev ?? {
         loading: true, error: null,
-        electricity: { rates: [], svtRate: null, trackerCost: null, svtCost: null },
+        electricity: { rates: [], svtRates: [], trackerCost: null, svtCost: null },
         gas: null, svtProductCode: null, currentTrackerProduct: null,
       }),
       loading: true, error: null,
@@ -1064,14 +1125,6 @@ export function Dashboard({ api }: DashboardProps) {
           .filter(r => r.date >= rateFromKey)
           .sort((a, b) => a.date.localeCompare(b.date));
 
-      /** Pick the most recent DIRECT_DEBIT (or any) flat rate from SVT rates */
-      const pickSvtRate = (raw: { value_inc_vat: number; valid_from: string; payment_method: string | null }[]): number | null => {
-        const filtered = raw
-          .filter(r => !r.payment_method || r.payment_method === 'DIRECT_DEBIT')
-          .sort((a, b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime());
-        return filtered[0]?.value_inc_vat ?? null;
-      };
-
       /** Fetch rates + SVT rates + costs for one fuel */
       const fetchFuelData = async (
         fuelType: 'electricity' | 'gas',
@@ -1079,13 +1132,16 @@ export function Dashboard({ api }: DashboardProps) {
         svtTariff: string,
         consumption: ConsumptionResult[],
       ): Promise<TrackerFuelData> => {
-        const [trackerRates, svtRates] = await Promise.all([
+        const [trackerRates, svtRatesRaw] = await Promise.all([
           api.fetchUnitRates(productCode, trackerTariff, fuelType, rateFromIso, rateToIso),
           api.fetchUnitRates(SVT_PRODUCT, svtTariff, fuelType, rateFromIso, rateToIso),
         ]);
 
         const rates = toTrackerRates(trackerRates);
-        const svtRate = pickSvtRate(svtRates);
+        // Keep the full SVT rate history, sorted oldest-first for date-range lookup
+        const svtRates: SvtRateEntry[] = svtRatesRaw
+          .map(r => ({ valid_from: r.valid_from, valid_to: r.valid_to, value_inc_vat: r.value_inc_vat }))
+          .sort((a, b) => new Date(a.valid_from).getTime() - new Date(b.valid_from).getTime());
 
         let trackerCost: CostCalculation | null = null;
         let svtCost: CostCalculation | null = null;
@@ -1106,7 +1162,7 @@ export function Dashboard({ api }: DashboardProps) {
           svtCost = CostEngine.calculateCost(consumption, sRates, sSC);
         }
 
-        return { rates, svtRate, trackerCost, svtCost };
+        return { rates, svtRates, trackerCost, svtCost };
       };
 
       // Fetch electricity + gas (if available) + current Tracker version in parallel
@@ -1129,7 +1185,7 @@ export function Dashboard({ api }: DashboardProps) {
     } catch (err) {
       setTrackerData(prev => ({
         ...(prev ?? {
-          electricity: { rates: [], svtRate: null, trackerCost: null, svtCost: null },
+          electricity: { rates: [], svtRates: [], trackerCost: null, svtCost: null },
           gas: null, svtProductCode: null, currentTrackerProduct: null,
         }),
         loading: false,
