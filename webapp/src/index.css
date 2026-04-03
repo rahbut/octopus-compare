@@ -173,3 +173,7 @@ button:disabled {
 .mb-2 { margin-bottom: 1rem; }
 .text-center { text-align: center; }
 .text-secondary { color: var(--text-secondary); }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

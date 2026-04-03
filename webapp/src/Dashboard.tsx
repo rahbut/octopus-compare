@@ -23,6 +23,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
+  ReferenceLine,
 } from 'recharts';
 
 // ---------------------------------------------------------------------------
@@ -34,7 +35,7 @@ interface DashboardProps {
 }
 
 type Timeframe = '7days' | '30days' | '1year';
-type AppView = 'usage' | 'compare';
+type AppView = 'tracker' | 'usage' | 'compare';
 
 interface MeterInfo {
   id: string;
@@ -68,6 +69,35 @@ interface BaselineResult {
   /** Full product name e.g. "Octopus Tracker April 2025 v2" */
   productFullName: string | null;
   regionLetter: string;
+}
+
+interface TrackerDayRate {
+  date: string;        // local date key YYYY-MM-DD
+  label: string;       // e.g. "3 Apr"
+  rateIncVat: number;  // p/kWh
+  valid_from: string;  // raw ISO from API
+}
+
+interface TrackerFuelData {
+  /** Daily rates for the selected period, sorted oldest-first */
+  rates: TrackerDayRate[];
+  /** SVT flat rate p/kWh */
+  svtRate: number | null;
+  /** Cost on Tracker tariff */
+  trackerCost: CostCalculation | null;
+  /** Cost on SVT */
+  svtCost: CostCalculation | null;
+}
+
+interface TrackerData {
+  loading: boolean;
+  error: string | null;
+  electricity: TrackerFuelData;
+  /** null if the user has no gas meter on this Tracker product */
+  gas: TrackerFuelData | null;
+  svtProductCode: string | null;
+  /** The current (newest) Tracker product the user could switch to */
+  currentTrackerProduct: { productCode: string; tariffCode: string; fullName: string } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -133,22 +163,45 @@ function productCodeFromTariffCode(tariffCode: string): string {
   return tariffCode;
 }
 
+/** Returns true if the product code looks like a Tracker tariff (e.g. SILVER-25-04-15) */
+function isTrackerProductCode(productCode: string): boolean {
+  // Tracker products all have display_name "Octopus Tracker" and use the SILVER-* prefix
+  // We detect by the date-versioned SILVER- pattern; is_tracker flag is on the Product object
+  // but we also need to handle cases where the product isn't in the public list
+  return /^SILVER-\d{2}-\d{2}-\d{2}$/.test(productCode);
+}
+
 
 function penceToGBP(pence: number): string {
   return `£${(pence / 100).toFixed(2)}`;
 }
 
-function aggregateByDay(consumption: ConsumptionResult[]) {
+/** Format a local date as YYYY-MM-DD using local timezone (not UTC) */
+function localDateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function aggregateByDay(consumption: ConsumptionResult[], maxDays?: number) {
+  const todayKey = localDateKey(new Date());
   const daily: Record<string, number> = {};
   for (const item of consumption) {
-    const key = new Date(item.interval_start).toISOString().split('T')[0];
+    const key = localDateKey(new Date(item.interval_start));
+    // Never include future dates
+    if (key > todayKey) continue;
     daily[key] = (daily[key] ?? 0) + item.consumption;
   }
-  return Object.keys(daily).sort().map(k => ({
-    date: new Date(k).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
-    dateKey: k,
-    kWh: Number(daily[k].toFixed(3)),
-  }));
+  const sorted = Object.keys(daily).sort();
+  // Trim to the last N days if requested
+  const trimmed = maxDays ? sorted.slice(-maxDays) : sorted;
+  return trimmed.map(k => {
+    const d = new Date(k + 'T12:00:00');
+    return {
+      date: d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+      dow: d.toLocaleDateString('en-GB', { weekday: 'short' }),
+      dateKey: k,
+      kWh: Number(daily[k].toFixed(3)),
+    };
+  });
 }
 
 function aggregateByMonth(consumption: ConsumptionResult[]) {
@@ -162,26 +215,42 @@ function aggregateByMonth(consumption: ConsumptionResult[]) {
     const [y, m] = k.split('-');
     return {
       date: new Date(Number(y), Number(m) - 1).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }),
+      dow: '',
       dateKey: k,
       kWh: Number(monthly[k].toFixed(3)),
     };
   });
 }
 
-/** Merge current + prior period into a single chart dataset for side-by-side bars */
+/** Returns a recharts custom tick renderer that shows date + day-of-week on two lines */
+function makeDowTick(data: { date: string; dow: string }[]) {
+  return function DowTick({ x, y, payload, index }: { x: number; y: number; payload: { value: string }; index: number }) {
+    const dow = data[index]?.dow ?? '';
+    return (
+      <g transform={`translate(${x},${y})`}>
+        <text x={0} y={0} dy={12} textAnchor="middle" fill="var(--text-secondary)" fontSize={11}>{payload.value}</text>
+        <text x={0} y={0} dy={24} textAnchor="middle" fill="var(--text-secondary)" fontSize={10} opacity={0.65}>{dow}</text>
+      </g>
+    );
+  };
+}
+
+/** Merge current + prior period into a single chart dataset.
+ *  Aligns by index offset (day 1 of current vs day 1 of prior) so that
+ *  the x-axis label and dow come from the current period only.
+ *  The chart always has exactly current.length entries. */
 function mergePeriodsForChart(
   current: ReturnType<typeof aggregateByDay>,
   prior: ReturnType<typeof aggregateByDay>,
   currentLabel: string,
   priorLabel: string
 ) {
-  // Align by index position (day 1 vs day 1, day 2 vs day 2, etc.)
-  const len = Math.max(current.length, prior.length);
-  return Array.from({ length: len }, (_, i) => ({
-    index: i + 1,
-    [currentLabel]: current[i]?.kWh ?? null,
+  return current.map((c, i) => ({
+    date: c.date,
+    dow: c.dow,
+    dateKey: c.dateKey,
+    [currentLabel]: c.kWh,
     [priorLabel]: prior[i]?.kWh ?? null,
-    date: current[i]?.date ?? prior[i]?.date ?? '',
   }));
 }
 
@@ -236,6 +305,239 @@ function SummaryCard({
 }
 
 // ---------------------------------------------------------------------------
+// Tracker panel
+// ---------------------------------------------------------------------------
+
+/** Shared sub-component for one fuel's rate cards + chart + cost comparison */
+function TrackerFuelSection({
+  label,
+  fuelData,
+  timeframe,
+  accentColor,
+}: {
+  label: string;
+  fuelData: TrackerFuelData;
+  timeframe: Timeframe;
+  accentColor: string;
+}) {
+  const { rates, svtRate, trackerCost, svtCost } = fuelData;
+
+  const now = new Date();
+  const todayKey = localDateKey(now);
+  const tomorrowKey = localDateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
+  const yesterdayKey = localDateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+
+  const todayRate = rates.find(r => r.date === todayKey);
+  const tomorrowRate = rates.find(r => r.date === tomorrowKey);
+  const yesterdayRate = rates.find(r => r.date === yesterdayKey);
+
+  const chartData = useMemo(() => {
+    const days = timeframeDays(timeframe);
+    return rates.slice(-days).map(r => ({
+      date: r.label,
+      dow: new Date(r.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short' }),
+      rate: r.rateIncVat,
+    }));
+  }, [rates, timeframe]);
+
+  const savingPence = trackerCost && svtCost ? svtCost.totalCostPence - trackerCost.totalCostPence : null;
+
+  const rateCard = (highlighted: boolean, faded: boolean): React.CSSProperties => ({
+    flex: '1 1 120px', padding: '0.85rem 1rem', borderRadius: '8px',
+    border: '1px solid var(--border-color)',
+    background: highlighted ? accentColor : 'var(--input-bg)',
+    opacity: faded ? 0.55 : 1, textAlign: 'center',
+  });
+
+  return (
+    <div className="panel flex-col gap-3">
+      <h3 style={{ margin: 0 }}>{label}</h3>
+
+      {/* Rate cards */}
+      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+        <div style={rateCard(false, false)}>
+          <div className="text-secondary" style={{ fontSize: '0.75rem', marginBottom: '0.35rem' }}>Yesterday</div>
+          <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{yesterdayRate ? `${yesterdayRate.rateIncVat.toFixed(2)}p` : '—'}</div>
+          <div className="text-secondary" style={{ fontSize: '0.72rem' }}>per kWh</div>
+        </div>
+
+        <div style={rateCard(true, false)}>
+          <div style={{ fontSize: '0.75rem', marginBottom: '0.35rem', color: 'rgba(255,255,255,0.75)' }}>Today</div>
+          <div style={{ fontSize: '1.8rem', fontWeight: 700, color: '#fff' }}>{todayRate ? `${todayRate.rateIncVat.toFixed(2)}p` : '—'}</div>
+          <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.6)' }}>per kWh</div>
+          {todayRate && yesterdayRate && (() => {
+            const diff = todayRate.rateIncVat - yesterdayRate.rateIncVat;
+            const pct = (diff / yesterdayRate.rateIncVat) * 100;
+            const up = diff > 0;
+            return (
+              <div style={{ fontSize: '0.72rem', marginTop: '0.3rem', color: up ? 'rgba(255,160,160,0.9)' : 'rgba(160,255,160,0.9)' }}>
+                {up ? '▲' : '▼'} {Math.abs(diff).toFixed(2)}p ({Math.abs(pct).toFixed(0)}%) vs yesterday
+              </div>
+            );
+          })()}
+        </div>
+
+        <div style={rateCard(false, !tomorrowRate)}>
+          <div className="text-secondary" style={{ fontSize: '0.75rem', marginBottom: '0.35rem' }}>Tomorrow</div>
+          <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>
+            {tomorrowRate ? `${tomorrowRate.rateIncVat.toFixed(2)}p` : 'Not yet published'}
+          </div>
+          {tomorrowRate && <div className="text-secondary" style={{ fontSize: '0.72rem' }}>per kWh</div>}
+          {tomorrowRate && todayRate && (() => {
+            const diff = tomorrowRate.rateIncVat - todayRate.rateIncVat;
+            const pct = (diff / todayRate.rateIncVat) * 100;
+            const up = diff > 0;
+            return (
+              <div className="text-secondary" style={{ fontSize: '0.72rem', marginTop: '0.3rem' }}>
+                {up ? '▲' : '▼'} {Math.abs(diff).toFixed(2)}p ({Math.abs(pct).toFixed(0)}%) vs today
+              </div>
+            );
+          })()}
+        </div>
+
+        {svtRate !== null && (
+          <div style={rateCard(false, false)}>
+            <div className="text-secondary" style={{ fontSize: '0.75rem', marginBottom: '0.35rem' }}>Flexible Octopus</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{svtRate.toFixed(2)}p</div>
+            <div className="text-secondary" style={{ fontSize: '0.72rem' }}>per kWh (flat)</div>
+            {todayRate && (() => {
+              const diff = todayRate.rateIncVat - svtRate;
+              const cheaper = diff < 0;
+              return (
+                <div style={{ fontSize: '0.72rem', marginTop: '0.3rem', color: cheaper ? 'var(--success-color)' : 'var(--error-color)' }}>
+                  Tracker is {cheaper ? `${Math.abs(diff).toFixed(2)}p cheaper` : `${diff.toFixed(2)}p more expensive`} today
+                </div>
+              );
+            })()}
+          </div>
+        )}
+      </div>
+
+      {/* Rate trend chart */}
+      {chartData.length > 1 && (
+        <div style={{ width: '100%', height: 200 }}>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }} barCategoryGap="20%">
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
+              <XAxis dataKey="date" stroke="var(--text-secondary)"
+                interval={timeframe === '1year' ? Math.floor(chartData.length / 12) : timeframe === '7days' ? 0 : 'preserveStartEnd'}
+                height={timeframe === '7days' ? 36 : 20}
+                tick={timeframe === '7days'
+                  ? (makeDowTick(chartData as unknown as { date: string; dow: string }[]) as React.FC)
+                  : { fontSize: 11 } as object
+                } />
+              <YAxis stroke="var(--text-secondary)" tick={{ fontSize: 11 }} unit="p" width={50}
+                domain={([dataMin, dataMax]: readonly number[]) => [Math.max(0, (dataMin as number) - 2), (dataMax as number) + 2]} />
+              <Tooltip
+                cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+                contentStyle={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)', color: 'var(--text-primary)', borderRadius: '8px', fontSize: '0.85rem' }}
+                wrapperStyle={{ opacity: 1, zIndex: 10 }}
+                formatter={(v: unknown) => [`${(v as number).toFixed(2)}p/kWh`, 'Tracker rate']}
+              />
+              {svtRate !== null && (
+                <ReferenceLine y={svtRate} stroke="var(--text-secondary)" strokeDasharray="6 3"
+                  label={{ value: `SVT ${svtRate.toFixed(1)}p`, position: 'insideTopRight', fill: 'var(--text-secondary)', fontSize: 11 }}
+                />
+              )}
+              <Bar dataKey="rate" name="Tracker rate" fill={accentColor} radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Cost comparison */}
+      {(trackerCost || svtCost) && (
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', paddingTop: '0.25rem', borderTop: '1px solid var(--border-color)' }}>
+          {trackerCost && (
+            <div style={{ flex: '1 1 130px' }}>
+              <div className="text-secondary" style={{ fontSize: '0.72rem', marginBottom: '0.2rem' }}>Tracker cost</div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{penceToGBP(trackerCost.totalCostPence)}</div>
+              <div className="text-secondary" style={{ fontSize: '0.7rem' }}>{trackerCost.averagePencePerKwh.toFixed(2)}p avg · {penceToGBP(trackerCost.standingChargePence)} standing</div>
+            </div>
+          )}
+          {svtCost && (
+            <div style={{ flex: '1 1 130px' }}>
+              <div className="text-secondary" style={{ fontSize: '0.72rem', marginBottom: '0.2rem' }}>Flexible Octopus cost</div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{penceToGBP(svtCost.totalCostPence)}</div>
+              <div className="text-secondary" style={{ fontSize: '0.7rem' }}>{svtCost.averagePencePerKwh.toFixed(2)}p avg · {penceToGBP(svtCost.standingChargePence)} standing</div>
+            </div>
+          )}
+          {savingPence !== null && (
+            <div style={{ flex: '1 1 130px' }}>
+              <div className="text-secondary" style={{ fontSize: '0.72rem', marginBottom: '0.2rem' }}>
+                {savingPence > 0 ? 'You saved' : 'You paid extra'}
+              </div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 700, color: savingPence > 0 ? 'var(--success-color)' : 'var(--error-color)' }}>
+                {penceToGBP(Math.abs(savingPence))}
+              </div>
+              <div className="text-secondary" style={{ fontSize: '0.7rem' }}>vs Flexible Octopus</div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TrackerPanel({
+  data,
+  timeframe,
+}: {
+  data: TrackerData;
+  timeframe: Timeframe;
+}) {
+  const { loading, error, electricity, gas, currentTrackerProduct } = data;
+
+  if (loading) {
+    return (
+      <div className="panel" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '3rem 0', gap: '0.75rem' }}>
+        <div style={{
+          width: 32, height: 32, borderRadius: '50%',
+          border: '3px solid var(--border-color)',
+          borderTopColor: 'var(--accent-color)',
+          animation: 'spin 0.8s linear infinite',
+        }} />
+        <span className="text-secondary" style={{ fontSize: '0.85rem' }}>Loading Tracker rates…</span>
+      </div>
+    );
+  }
+  if (error) {
+    return <div className="panel"><p style={{ color: 'var(--error-color)' }}>Failed to load Tracker data: {error}</p></div>;
+  }
+
+  return (
+    <div className="flex-col gap-4">
+      <TrackerFuelSection
+        label="Electricity"
+        fuelData={electricity}
+        timeframe={timeframe}
+        accentColor="var(--accent-color)"
+      />
+
+      {gas && (
+        <TrackerFuelSection
+          label="Gas"
+          fuelData={gas}
+          timeframe={timeframe}
+          accentColor="#e8833a"
+        />
+      )}
+
+      {currentTrackerProduct && (
+        <div className="panel" style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '0.88rem', fontWeight: 600 }}>Newer Tracker available</div>
+            <div className="text-secondary" style={{ fontSize: '0.82rem', marginTop: '0.15rem' }}>
+              {currentTrackerProduct.fullName} — compare it in the Compare tab
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Meter panel — shows one meter's usage + period comparison
 // ---------------------------------------------------------------------------
 
@@ -248,13 +550,14 @@ const MeterPanel = React.memo(function MeterPanel({
   const { meter, current, prior, currentCost, priorCost, loading, error } = data;
   const useMonthly = timeframe === '1year';
 
+  const maxDays = timeframe === '7days' ? 7 : timeframe === '30days' ? 30 : undefined;
   const currentAgg = useMemo(
-    () => useMonthly ? aggregateByMonth(current) : aggregateByDay(current),
-    [current, useMonthly]
+    () => useMonthly ? aggregateByMonth(current) : aggregateByDay(current, maxDays),
+    [current, useMonthly, maxDays]
   );
   const priorAgg = useMemo(
-    () => useMonthly ? aggregateByMonth(prior) : aggregateByDay(prior),
-    [prior, useMonthly]
+    () => useMonthly ? aggregateByMonth(prior) : aggregateByDay(prior, maxDays),
+    [prior, useMonthly, maxDays]
   );
 
   const chartData = useMemo(
@@ -285,8 +588,14 @@ const MeterPanel = React.memo(function MeterPanel({
       </div>
 
       {loading && (
-        <div className="text-secondary text-center" style={{ padding: '2rem 0' }}>
-          Loading…
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '3rem 0', gap: '0.75rem' }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: '50%',
+            border: '3px solid var(--border-color)',
+            borderTopColor: 'var(--accent-color)',
+            animation: 'spin 0.8s linear infinite',
+          }} />
+          <span className="text-secondary" style={{ fontSize: '0.85rem' }}>Loading…</span>
         </div>
       )}
 
@@ -353,13 +662,22 @@ const MeterPanel = React.memo(function MeterPanel({
           {/* Chart */}
           <div style={{ width: '100%', height: 240, minHeight: 240, overflow: 'hidden' }}>
             <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }} barCategoryGap="20%">
+              <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: timeframe === '7days' ? 20 : 5 }} barCategoryGap="20%">
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
-                <XAxis dataKey="date" stroke="var(--text-secondary)" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                <XAxis
+                  dataKey="date"
+                  stroke="var(--text-secondary)"
+                  interval={timeframe === '7days' ? 0 : 'preserveStartEnd'}
+                  height={timeframe === '7days' ? 36 : 20}
+                  tick={timeframe === '7days'
+                    ? (makeDowTick(chartData as unknown as { date: string; dow: string }[]) as React.FC)
+                    : { fontSize: 11 } as object
+                  }
+                />
                 <YAxis stroke="var(--text-secondary)" tick={{ fontSize: 11 }} unit=" kWh" width={60} />
                 <Tooltip
                   cursor={{ fill: 'rgba(255,255,255,0.04)' }}
-                  contentStyle={{ backgroundColor: 'var(--panel-bg)', borderColor: 'var(--border-color)', color: 'var(--text-primary)', borderRadius: '8px', fontSize: '0.85rem' }}
+                  contentStyle={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)', color: 'var(--text-primary)', borderRadius: '8px', fontSize: '0.85rem' }}
                 />
                 {hasPrior && <Legend wrapperStyle={{ fontSize: '0.8rem' }} />}
                 <Bar dataKey="current" name={timeframeLabel(timeframe)} fill="var(--chart-current)" radius={[3, 3, 0, 0]} />
@@ -389,6 +707,11 @@ export function Dashboard({ api }: DashboardProps) {
 
   const [appView, setAppView] = useState<AppView>('usage');
   const [timeframe, setTimeframe] = useState<Timeframe>('30days');
+
+  // Tracker view state
+  const [trackerData, setTrackerData] = useState<TrackerData | null>(null);
+  // Tracks the last timeframe+elecDataLength combo we fetched tracker data for — prevents double-fetches
+  const lastTrackerFetchKey = React.useRef<string | null>(null);
   const [meterData, setMeterData] = useState<Record<string, MeterData>>({});
 
   // Compare view state
@@ -520,12 +843,24 @@ export function Dashboard({ api }: DashboardProps) {
           return;
         }
 
-        const latestDate = new Date(latestStr);
+        // Snap to local-midnight boundaries so we get exactly N complete local calendar days.
+        // latestStr is the interval_end of the most recent slot (e.g. "2026-04-03T22:30:00Z" = 23:30 BST).
+        // Parse into a local Date, then advance to the start of the *next* local day.
+        // currentTo = start of the day AFTER the latest data day (exclusive upper bound).
+        // currentFrom = exactly N days before that = N complete local calendar days of data.
+        // e.g. latest data is 3 Apr → currentTo = 4 Apr 00:00, currentFrom = 28 Mar 00:00 → 7 days: 28,29,30,31 Mar + 1,2,3 Apr
+        // interval_end is the exclusive end of the last slot, e.g. "2026-04-02T01:00:00+01:00"
+        // = midnight BST = start of Apr 2, meaning the last slot DATA is from Apr 1.
+        // Subtract 1ms to land inside the last data day.
+        const lastDataMs = new Date(latestStr).getTime() - 1;
+        const latestDay = new Date(lastDataMs);
         const days = timeframeDays(tf);
-        const currentTo = latestDate;
-        const currentFrom = new Date(currentTo.getTime() - days * 86400_000);
+        // currentTo = start of the day after the last data day (exclusive upper bound for API)
+        const currentTo = new Date(latestDay.getFullYear(), latestDay.getMonth(), latestDay.getDate() + 1);
+        const currentFrom = new Date(currentTo.getFullYear(), currentTo.getMonth(), currentTo.getDate() - days);
         const priorTo = currentFrom;
-        const priorFrom = new Date(priorTo.getTime() - days * 86400_000);
+        const priorFrom = new Date(priorTo.getFullYear(), priorTo.getMonth(), priorTo.getDate() - days);
+        const latestDate = latestDay;
 
         const [currentData, priorData] = await Promise.all([
           meter.fuelType === 'electricity'
@@ -644,6 +979,14 @@ export function Dashboard({ api }: DashboardProps) {
     if (meters.length === 0 || !account) return;
     setAltResults({});
     setBaselines({});
+    // Immediately mark all meters as loading with empty data so charts blank out
+    // before the new period's data arrives — prevents stale data flicker
+    setMeterData(
+      Object.fromEntries(meters.map(m => [m.id, {
+        meter: m, current: [], prior: [], latestDate: null,
+        currentCost: null, priorCost: null, loading: true, error: null,
+      }]))
+    );
     fetchAllMeters(meters, timeframe, account);
   }, [meters, timeframe, account, fetchAllMeters]);
 
@@ -657,6 +1000,203 @@ export function Dashboard({ api }: DashboardProps) {
     setAltResults({});
     runAllComparisons(meter, mData.current, bl);
   }, [baselines, compareMeterId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // -----------------------------------------------------------------------
+  // Tracker view: fetch daily rates + SVT comparison
+  // -----------------------------------------------------------------------
+
+  const fetchTrackerData = useCallback(async (
+    elecTariffCode: string,
+    productCode: string,
+    regionLetter: string,
+    tf: Timeframe,
+    elecConsumption: ConsumptionResult[],
+    gasConsumption: ConsumptionResult[],
+    gasTariffCode: string | null,
+  ) => {
+    setTrackerData(prev => ({
+      ...(prev ?? {
+        loading: true, error: null,
+        electricity: { rates: [], svtRate: null, trackerCost: null, svtCost: null },
+        gas: null, svtProductCode: null, currentTrackerProduct: null,
+      }),
+      loading: true, error: null,
+    }));
+
+    try {
+      const now = new Date();
+      const days = timeframeDays(tf);
+      const rateFromLocal = new Date(now.getFullYear(), now.getMonth(), now.getDate() - days);
+      const rateToLocal = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2);
+      const rateFromIso = rateFromLocal.toISOString();
+      const rateToIso = rateToLocal.toISOString();
+      const rateFromKey = localDateKey(rateFromLocal);
+
+      const SVT_PRODUCT = 'VAR-22-11-01';
+      const region = regionLetter.replace('_', '');
+      const svtElecTariff = `E-1R-${SVT_PRODUCT}-${region}`;
+      const svtGasTariff = `G-1R-${SVT_PRODUCT}-${region}`;
+
+      /** Convert raw API rate entries to sorted TrackerDayRate[].
+       *  Tracker rates have valid_from at 23:00 UTC (= midnight BST/local).
+       *  We use the local date of valid_to (the end of the rate period) as the
+       *  "day" this rate applies to — that's the local calendar day it covers. */
+      const toTrackerRates = (raw: { value_inc_vat: number; valid_from: string; valid_to: string | null }[]): TrackerDayRate[] =>
+        raw
+          .map(r => {
+            // valid_to is 23:00 UTC the next day = midnight local the day after.
+            // Subtract 1ms to land inside the correct local day.
+            const representativeDate = r.valid_to
+              ? new Date(new Date(r.valid_to).getTime() - 1)
+              : new Date(new Date(r.valid_from).getTime() + 86400_000 - 1);
+            const dateKey = localDateKey(representativeDate);
+            return {
+              date: dateKey,
+              label: representativeDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+              rateIncVat: r.value_inc_vat,
+              valid_from: r.valid_from,
+            };
+          })
+          .filter(r => r.date >= rateFromKey)
+          .sort((a, b) => a.date.localeCompare(b.date));
+
+      /** Pick the most recent DIRECT_DEBIT (or any) flat rate from SVT rates */
+      const pickSvtRate = (raw: { value_inc_vat: number; valid_from: string; payment_method: string | null }[]): number | null => {
+        const filtered = raw
+          .filter(r => !r.payment_method || r.payment_method === 'DIRECT_DEBIT')
+          .sort((a, b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime());
+        return filtered[0]?.value_inc_vat ?? null;
+      };
+
+      /** Fetch rates + SVT rates + costs for one fuel */
+      const fetchFuelData = async (
+        fuelType: 'electricity' | 'gas',
+        trackerTariff: string,
+        svtTariff: string,
+        consumption: ConsumptionResult[],
+      ): Promise<TrackerFuelData> => {
+        const [trackerRates, svtRates] = await Promise.all([
+          api.fetchUnitRates(productCode, trackerTariff, fuelType, rateFromIso, rateToIso),
+          api.fetchUnitRates(SVT_PRODUCT, svtTariff, fuelType, rateFromIso, rateToIso),
+        ]);
+
+        const rates = toTrackerRates(trackerRates);
+        const svtRate = pickSvtRate(svtRates);
+
+        let trackerCost: CostCalculation | null = null;
+        let svtCost: CostCalculation | null = null;
+
+        if (consumption.length > 0) {
+          const sorted = [...consumption].sort((a, b) => new Date(a.interval_start).getTime() - new Date(b.interval_start).getTime());
+          const periodFrom = toUtcIso(sorted[0].interval_start);
+          const periodTo = toUtcIso(sorted[sorted.length - 1].interval_end);
+
+          const [tRates, tSC, sRates, sSC] = await Promise.all([
+            api.fetchUnitRates(productCode, trackerTariff, fuelType, periodFrom, periodTo),
+            api.fetchStandingCharges(productCode, trackerTariff, fuelType, periodFrom, periodTo),
+            api.fetchUnitRates(SVT_PRODUCT, svtTariff, fuelType, periodFrom, periodTo),
+            api.fetchStandingCharges(SVT_PRODUCT, svtTariff, fuelType, periodFrom, periodTo),
+          ]);
+
+          trackerCost = CostEngine.calculateCost(consumption, tRates, tSC);
+          svtCost = CostEngine.calculateCost(consumption, sRates, sSC);
+        }
+
+        return { rates, svtRate, trackerCost, svtCost };
+      };
+
+      // Fetch electricity + gas (if available) + current Tracker version in parallel
+      const [electricity, gasResult, currentTracker] = await Promise.all([
+        fetchFuelData('electricity', elecTariffCode, svtElecTariff, elecConsumption),
+        gasTariffCode
+          ? fetchFuelData('gas', gasTariffCode, svtGasTariff, gasConsumption)
+          : Promise.resolve(null),
+        api.findCurrentTrackerProduct(productCode, regionLetter, 'electricity'),
+      ]);
+
+      setTrackerData({
+        loading: false,
+        error: null,
+        electricity,
+        gas: gasResult,
+        svtProductCode: SVT_PRODUCT,
+        currentTrackerProduct: currentTracker,
+      });
+    } catch (err) {
+      setTrackerData(prev => ({
+        ...(prev ?? {
+          electricity: { rates: [], svtRate: null, trackerCost: null, svtCost: null },
+          gas: null, svtProductCode: null, currentTrackerProduct: null,
+        }),
+        loading: false,
+        error: err instanceof Error ? err.message : 'Failed to load Tracker data',
+      }));
+    }
+  }, [api]);
+
+  // Effect 1: detect Tracker tariff once meters are known — set default view only.
+  // Does NOT depend on meterData so it won't re-run on every consumption reload.
+  useEffect(() => {
+    const importElec = meters.find(m => m.fuelType === 'electricity' && !m.isExport);
+    if (!importElec) return;
+    const elecAgreement = getActiveAgreement(importElec.point.agreements);
+    if (!elecAgreement) return;
+    if (!isTrackerProductCode(productCodeFromTariffCode(elecAgreement.tariff_code))) return;
+    setAppView(v => v === 'usage' ? 'tracker' : v);
+  }, [meters]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Effect 2: fetch Tracker data once all meters have finished loading.
+  // Uses a ref-based key to ensure we only fetch once per timeframe+data combination.
+  useEffect(() => {
+    const importElec = meters.find(m => m.fuelType === 'electricity' && !m.isExport);
+    if (!importElec) return;
+    const elecAgreement = getActiveAgreement(importElec.point.agreements);
+    if (!elecAgreement) return;
+    const productCode = productCodeFromTariffCode(elecAgreement.tariff_code);
+    if (!isTrackerProductCode(productCode)) return;
+
+    // Wait until every meter entry is present and none are loading
+    const allEntries = Object.values(meterData);
+    if (allEntries.length === 0) return;
+    if (allEntries.some(d => d.loading)) return;
+
+    const elecData = meterData[importElec.id];
+    if (!elecData || elecData.current.length === 0) return;
+
+    const gasMeter = meters.find(m => m.fuelType === 'gas' && !m.isExport);
+    const gasAgreement = gasMeter ? getActiveAgreement(gasMeter.point.agreements) : null;
+    const gasProductCode = gasAgreement ? productCodeFromTariffCode(gasAgreement.tariff_code) : null;
+    const gasTariffCode = gasProductCode === productCode
+      ? `G-1R-${productCode}-${gasMeter ? regionLetterFromMeters() : 'A'}`
+      : null;
+    const gasMeterData = gasTariffCode && gasMeter ? meterData[gasMeter.id] : null;
+
+    // Build a stable key: timeframe + elec data length + gas data length
+    // This ensures we only re-fetch when the actual data has changed, not on unrelated meterData updates
+    const fetchKey = `${timeframe}:${elecData.current.length}:${gasMeterData?.current.length ?? 0}`;
+    if (lastTrackerFetchKey.current === fetchKey) return;
+    lastTrackerFetchKey.current = fetchKey;
+
+    const property = account?.properties[0];
+    const mpan = property?.electricity_meter_points?.find(m => !m.is_export)?.mpan ?? '';
+    const regionLetter = mpan ? getGspFromMpan(mpan) : '_A';
+
+    fetchTrackerData(
+      elecAgreement.tariff_code,
+      productCode,
+      regionLetter,
+      timeframe,
+      elecData.current,
+      gasMeterData?.current ?? [],
+      gasTariffCode,
+    );
+
+    function regionLetterFromMeters() {
+      const property = account?.properties[0];
+      const mpan = property?.electricity_meter_points?.find(m => !m.is_export)?.mpan ?? '';
+      return mpan ? getGspFromMpan(mpan).replace('_', '') : 'A';
+    }
+  }, [meterData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // -----------------------------------------------------------------------
   // Compare view: compute all available tariffs in parallel
@@ -687,11 +1227,22 @@ export function Dashboard({ api }: DashboardProps) {
       ? productList
       : productList.filter(p => meter.fuelType === 'gas' ? p.has_gas : p.has_electricity);
 
+    // If the user is on a Tracker tariff and there's a newer version available, inject it.
+    // Tracker products are restricted and don't appear in the public product list.
+    const extraProducts: Array<{ code: string; full_name: string; tariffCode: string }> = [];
+    if (!meter.isExport && meter.fuelType === 'electricity' && trackerData?.currentTrackerProduct) {
+      const ct = trackerData.currentTrackerProduct;
+      // Only add if it's not the same as the user's current tariff
+      if (ct.productCode !== bl.productCode) {
+        extraProducts.push({ code: ct.productCode, full_name: ct.fullName, tariffCode: ct.tariffCode });
+      }
+    }
+
     // Accumulate all results locally; only the cheap counter triggers re-renders during the run.
     // A single setAltResults call at the end commits everything at once.
     const accumulated: Record<string, CostCalculation | null> = {};
 
-    await Promise.all(compatibleProducts.map(async product => {
+    const standardTasks = compatibleProducts.map(async product => {
       // Export tariffs use E- prefix (they're electricity export unit rates)
       const tariffCode = meter.fuelType === 'gas'
         ? `G-1R-${product.code}-${regionChar}`
@@ -705,15 +1256,28 @@ export function Dashboard({ api }: DashboardProps) {
       } catch {
         accumulated[product.code] = null;
       }
-      // Only update the lightweight counter — keeps the progress bar alive without
-      // re-rendering the full tree for every resolved tariff.
       setCompletedCount(c => c + 1);
-    }));
+    });
+
+    const extraTasks = extraProducts.map(async product => {
+      try {
+        const [unitRates, standingCharges] = await Promise.all([
+          CostEngine.fetchTariffRates(api, product.code, product.tariffCode, 'electricity', periodFrom, periodTo),
+          CostEngine.fetchStandingCharges(api, product.code, product.tariffCode, 'electricity', periodFrom, periodTo),
+        ]);
+        accumulated[product.code] = CostEngine.calculateCost(consumption, unitRates, standingCharges);
+      } catch {
+        accumulated[product.code] = null;
+      }
+      setCompletedCount(c => c + 1);
+    });
+
+    await Promise.all([...standardTasks, ...extraTasks]);
 
     // Single state update — one re-render to show the completed table
     setAltResults(accumulated);
     setComparisonsRunning(false);
-  }, [api, products, exportProducts]);
+  }, [api, products, exportProducts, trackerData]);
 
   // -----------------------------------------------------------------------
   // Derived
@@ -743,12 +1307,33 @@ export function Dashboard({ api }: DashboardProps) {
   );
   const compareIsExport = compareMeter?.isExport ?? false;
   const compareFuelType = compareMeter?.fuelType ?? 'electricity';
-  const activeProductList = useMemo(
-    () => compareIsExport
+  const activeProductList = useMemo(() => {
+    const base = compareIsExport
       ? exportProducts
-      : products.filter(p => compareFuelType === 'gas' ? p.has_gas : p.has_electricity),
-    [compareIsExport, compareFuelType, products, exportProducts]
-  );
+      : products.filter(p => compareFuelType === 'gas' ? p.has_gas : p.has_electricity);
+    // Inject the current Tracker version if the user is on a Tracker tariff and it's not already listed
+    if (!compareIsExport && compareFuelType === 'electricity' && trackerData?.currentTrackerProduct) {
+      const ct = trackerData.currentTrackerProduct;
+      const baseline = baselines[compareMeterId];
+      if (!base.find(p => p.code === ct.productCode) && ct.productCode !== baseline?.productCode) {
+        return [...base, {
+          code: ct.productCode,
+          full_name: ct.fullName,
+          display_name: 'Octopus Tracker',
+          description: '',
+          is_variable: true,
+          is_green: false,
+          is_tracker: true,
+          is_prepay: false,
+          is_business: false,
+          has_electricity: true,
+          has_gas: false,
+        }];
+      }
+    }
+    return base;
+  }, [compareIsExport, compareFuelType, products, exportProducts, trackerData, baselines, compareMeterId]);
+
   const sortedCompareRows = useMemo(() => {
     const rows = activeProductList.map(p => ({
       code: p.code,
@@ -795,7 +1380,17 @@ export function Dashboard({ api }: DashboardProps) {
   // -----------------------------------------------------------------------
 
   if (loading) {
-    return <div className="panel text-center text-secondary">Connecting to your account…</div>;
+    return (
+      <div className="panel" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '3rem 0', gap: '0.75rem' }}>
+        <div style={{
+          width: 32, height: 32, borderRadius: '50%',
+          border: '3px solid var(--border-color)',
+          borderTopColor: 'var(--accent-color)',
+          animation: 'spin 0.8s linear infinite',
+        }} />
+        <span className="text-secondary" style={{ fontSize: '0.85rem' }}>Connecting to your account…</span>
+      </div>
+    );
   }
   if (initError) {
     return <div className="panel"><h3 style={{ color: 'var(--error-color)' }}>Connection Error</h3><p>{initError}</p></div>;
@@ -845,6 +1440,20 @@ export function Dashboard({ api }: DashboardProps) {
 
         {/* View switcher */}
         <div style={{ display: 'flex', gap: '0.5rem' }}>
+          {trackerData !== null && (
+            <button
+              onClick={() => setAppView('tracker')}
+              style={{
+                opacity: appView === 'tracker' ? 1 : 0.5,
+                background: appView === 'tracker' ? 'var(--accent-color)' : 'var(--input-bg)',
+                color: appView === 'tracker' ? '#fff' : 'var(--text-primary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '6px', padding: '0.4rem 1rem', cursor: 'pointer', fontSize: '0.9rem',
+              }}
+            >
+              Tracker
+            </button>
+          )}
           <button
             onClick={() => setAppView('usage')}
             style={{
@@ -878,7 +1487,10 @@ export function Dashboard({ api }: DashboardProps) {
           {(['7days', '30days', '1year'] as Timeframe[]).map(tf => (
             <button
               key={tf}
-              onClick={() => setTimeframe(tf)}
+              onClick={() => {
+                setTimeframe(tf);
+                setTrackerData(prev => prev ? { ...prev, loading: true } : null);
+              }}
               style={{
                 padding: '0.35rem 0.85rem', fontSize: '0.85rem', borderRadius: '6px',
                 cursor: 'pointer', border: '1px solid var(--border-color)',
@@ -891,6 +1503,13 @@ export function Dashboard({ api }: DashboardProps) {
           ))}
         </div>
       </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* TRACKER VIEW                                                        */}
+      {/* ------------------------------------------------------------------ */}
+      {appView === 'tracker' && trackerData && activeTariffCode && (
+        <TrackerPanel data={trackerData} timeframe={timeframe} />
+      )}
 
       {/* ------------------------------------------------------------------ */}
       {/* USAGE VIEW                                                          */}

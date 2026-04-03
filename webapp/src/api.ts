@@ -189,7 +189,8 @@ export class OctopusApi {
       const opts = isPublic ? undefined : { headers: this.headers };
 
       const res = await fetch(nextUrl, opts);
-      if (!res.ok) throw new Error(`Failed to fetch from ${nextUrl}`);
+      if (res.status === 429) throw new Error('Octopus API rate limit reached — please wait a moment and try again');
+      if (!res.ok) throw new Error(`Failed to fetch from ${nextUrl} (${res.status})`);
       const data = await res.json();
 
       if (data.results) results = results.concat(data.results);
@@ -248,7 +249,7 @@ export class OctopusApi {
     fuelType: 'electricity' | 'gas',
     periodFrom?: string,
     periodTo?: string,
-  ): Promise<{ value_inc_vat: number; valid_from: string; valid_to: string | null }[]> {
+  ): Promise<{ value_inc_vat: number; valid_from: string; valid_to: string | null; payment_method: string | null }[]> {
     const endpoint = fuelType === 'electricity' ? 'electricity-tariffs' : 'gas-tariffs';
     let url = `${BASE_URL}/products/${productCode}/${endpoint}/${tariffCode}/standard-unit-rates/?page_size=1500`;
     if (periodFrom) url += `&period_from=${toUtcIso(periodFrom)}`;
@@ -275,57 +276,57 @@ export class OctopusApi {
 
   /**
    * Given a Tracker product code like "SILVER-25-04-15", find the currently-active
-   * Tracker product by probing known successor versions. Tracker products follow the
-   * pattern SILVER-YY-MM-DD and are released roughly quarterly.
+   * Tracker product by following the chain of successor versions.
+   *
+   * Each Tracker product's `available_to` date is the `available_from` of the next
+   * version, and the product code encodes that date as SILVER-YY-MM-DD. So we can
+   * walk the chain with at most a handful of fetches rather than probing blindly.
    *
    * Returns the current product's code and tariff code for the given region, or null
-   * if no current version can be found.
+   * if the user is already on the current version or none can be found.
    */
   async findCurrentTrackerProduct(
     baseProductCode: string,
-    regionLetter: string, // e.g. "_A"
+    regionLetter: string,
     fuelType: 'electricity' | 'gas',
   ): Promise<{ productCode: string; tariffCode: string; fullName: string } | null> {
-    // Extract the prefix (e.g. "SILVER") — Tracker products all share the same prefix
     const prefix = baseProductCode.split('-')[0];
-
-    // Generate candidate product codes for the next ~3 years of quarters
-    // Tracker versions are released roughly quarterly on the 1st or 15th of a month
-    const candidates: string[] = [];
-    const now = new Date();
-    for (let yearOffset = 0; yearOffset <= 3; yearOffset++) {
-      for (let month = 1; month <= 12; month++) {
-        const y = String((now.getFullYear() + yearOffset) % 100).padStart(2, '0');
-        const m = String(month).padStart(2, '0');
-        candidates.push(`${prefix}-${y}-${m}-01`);
-        candidates.push(`${prefix}-${y}-${m}-15`);
-      }
-    }
-
     const region = regionLetter.replace('_', '');
     const fuelPrefix = fuelType === 'electricity' ? 'E' : 'G';
 
-    // Try candidates in reverse-chronological order; return the first one that
-    // exists AND has available_to = null (meaning it's currently active)
-    // Sort newest first by parsing the date embedded in the code
-    const sorted = candidates
-      .filter(c => c > baseProductCode) // only versions newer than current
-      .sort((a, b) => b.localeCompare(a));
+    let currentCode = baseProductCode;
 
-    for (const productCode of sorted) {
+    // Walk the chain: each product's available_to tells us the next product code.
+    // Cap at 10 hops to prevent infinite loops.
+    for (let hop = 0; hop < 10; hop++) {
       try {
-        const res = await fetch(`${BASE_URL}/products/${productCode}/`);
-        if (!res.ok) continue;
+        const res = await fetch(`${BASE_URL}/products/${currentCode}/`);
+        if (!res.ok) break;
         const data = await res.json();
-        if (!data.is_tracker) continue;
-        // available_to null means currently open for sign-ups
-        if (data.available_to !== null) continue;
-        const tariffCode = `${fuelPrefix}-1R-${productCode}-${region}`;
-        return { productCode, tariffCode, fullName: data.full_name };
+
+        // available_to null means this IS the current live version
+        if (data.available_to === null) {
+          // Only return it if it's different from where we started
+          if (currentCode === baseProductCode) return null;
+          const tariffCode = `${fuelPrefix}-1R-${currentCode}-${region}`;
+          return { productCode: currentCode, tariffCode, fullName: data.full_name };
+        }
+
+        // Derive the next product code from available_to date: "2025-09-02T..." → "SILVER-25-09-02"
+        const nextDate = new Date(data.available_to);
+        const yy = String(nextDate.getFullYear()).slice(-2);
+        const mm = String(nextDate.getMonth() + 1).padStart(2, '0');
+        const dd = String(nextDate.getDate()).padStart(2, '0');
+        const nextCode = `${prefix}-${yy}-${mm}-${dd}`;
+
+        // Avoid looping if the derived code is the same
+        if (nextCode === currentCode) break;
+        currentCode = nextCode;
       } catch {
-        continue;
+        break;
       }
     }
+
     return null;
   }
 }
