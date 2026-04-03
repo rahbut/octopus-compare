@@ -239,7 +239,7 @@ function SummaryCard({
 // Meter panel — shows one meter's usage + period comparison
 // ---------------------------------------------------------------------------
 
-function MeterPanel({
+const MeterPanel = React.memo(function MeterPanel({
   data, timeframe,
 }: {
   data: MeterData;
@@ -262,8 +262,8 @@ function MeterPanel({
     [currentAgg, priorAgg]
   );
 
-  const currentKwh = current.reduce((s, r) => s + r.consumption, 0);
-  const priorKwh = prior.reduce((s, r) => s + r.consumption, 0);
+  const currentKwh = useMemo(() => current.reduce((s, r) => s + r.consumption, 0), [current]);
+  const priorKwh = useMemo(() => prior.reduce((s, r) => s + r.consumption, 0), [prior]);
   const kwhDelta = priorKwh > 0 ? currentKwh - priorKwh : null;
   const kwhDeltaPct = priorKwh > 0 ? (kwhDelta! / priorKwh) * 100 : null;
 
@@ -371,7 +371,7 @@ function MeterPanel({
       )}
     </div>
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // Main Dashboard
@@ -397,6 +397,8 @@ export function Dashboard({ api }: DashboardProps) {
   const [baselines, setBaselines] = useState<Record<string, BaselineResult>>({});
   /** productCode → calculated result (undefined = not yet done, null = failed) */
   const [altResults, setAltResults] = useState<Record<string, CostCalculation | null>>({});
+  /** Lightweight counter used only for progress bar — avoids re-renders from altResults during run */
+  const [completedCount, setCompletedCount] = useState(0);
   const [comparisonsRunning, setComparisonsRunning] = useState(false);
   type SortCol = 'name' | 'cost' | 'rate' | 'delta';
   const [sortCol, setSortCol] = useState<SortCol>('cost');
@@ -670,6 +672,7 @@ export function Dashboard({ api }: DashboardProps) {
 
     setComparisonsRunning(true);
     setAltResults({});
+    setCompletedCount(0);
 
     const sorted = [...consumption].sort(
       (a, b) => new Date(a.interval_start).getTime() - new Date(b.interval_start).getTime()
@@ -684,7 +687,10 @@ export function Dashboard({ api }: DashboardProps) {
       ? productList
       : productList.filter(p => meter.fuelType === 'gas' ? p.has_gas : p.has_electricity);
 
-    // Fire all compatible products in parallel; update results as each one resolves
+    // Accumulate all results locally; only the cheap counter triggers re-renders during the run.
+    // A single setAltResults call at the end commits everything at once.
+    const accumulated: Record<string, CostCalculation | null> = {};
+
     await Promise.all(compatibleProducts.map(async product => {
       // Export tariffs use E- prefix (they're electricity export unit rates)
       const tariffCode = meter.fuelType === 'gas'
@@ -695,14 +701,17 @@ export function Dashboard({ api }: DashboardProps) {
           CostEngine.fetchTariffRates(api, product.code, tariffCode, meter.fuelType, periodFrom, periodTo),
           CostEngine.fetchStandingCharges(api, product.code, tariffCode, meter.fuelType, periodFrom, periodTo),
         ]);
-        const result = CostEngine.calculateCost(consumption, unitRates, standingCharges);
-        setAltResults(prev => ({ ...prev, [product.code]: result }));
+        accumulated[product.code] = CostEngine.calculateCost(consumption, unitRates, standingCharges);
       } catch {
-        // Mark as failed so the row can show "unavailable"
-        setAltResults(prev => ({ ...prev, [product.code]: null }));
+        accumulated[product.code] = null;
       }
+      // Only update the lightweight counter — keeps the progress bar alive without
+      // re-rendering the full tree for every resolved tariff.
+      setCompletedCount(c => c + 1);
     }));
 
+    // Single state update — one re-render to show the completed table
+    setAltResults(accumulated);
     setComparisonsRunning(false);
   }, [api, products, exportProducts]);
 
@@ -727,6 +736,60 @@ export function Dashboard({ api }: DashboardProps) {
 
   const anyLoading = Object.values(meterData).some(d => d.loading);
 
+  // Memoised compare table data — recomputed only when altResults, sort, or product lists change
+  const compareMeter = useMemo(
+    () => meters.find(m => m.id === compareMeterId),
+    [meters, compareMeterId]
+  );
+  const compareIsExport = compareMeter?.isExport ?? false;
+  const compareFuelType = compareMeter?.fuelType ?? 'electricity';
+  const activeProductList = useMemo(
+    () => compareIsExport
+      ? exportProducts
+      : products.filter(p => compareFuelType === 'gas' ? p.has_gas : p.has_electricity),
+    [compareIsExport, compareFuelType, products, exportProducts]
+  );
+  const sortedCompareRows = useMemo(() => {
+    const rows = activeProductList.map(p => ({
+      code: p.code,
+      name: p.full_name,
+      result: altResults[p.code] as CostCalculation | null | undefined,
+    }));
+    return rows.sort((a, b) => {
+      const aR = a.result, bR = b.result;
+      if (!aR && !bR) return 0;
+      if (!aR) return 1;
+      if (!bR) return -1;
+      const baseline = baselines[compareMeterId];
+      const hasBaseline = baseline?.tariffCode !== 'Unknown';
+      let diff = 0;
+      if (sortCol === 'name') diff = a.name.localeCompare(b.name);
+      else if (sortCol === 'cost') diff = aR.totalCostPence - bR.totalCostPence;
+      else if (sortCol === 'rate') diff = aR.averagePencePerKwh - bR.averagePencePerKwh;
+      else if (sortCol === 'delta') {
+        const base = hasBaseline ? baseline.current.totalCostPence : 0;
+        diff = (aR.totalCostPence - base) - (bR.totalCostPence - base);
+      }
+      return sortAsc ? diff : -diff;
+    });
+  }, [activeProductList, altResults, sortCol, sortAsc, baselines, compareMeterId]);
+
+  // O(N) single pass to find the best product code — used for the badge
+  const bestProductCode = useMemo(() => {
+    const resolved = sortedCompareRows.filter(r => r.result != null) as Array<{ code: string; name: string; result: CostCalculation }>;
+    if (!resolved.length) return null;
+    const baseline = baselines[compareMeterId];
+    if (!baseline) return null;
+    const best = compareIsExport
+      ? resolved.reduce((a, b) => a.result.totalCostPence >= b.result.totalCostPence ? a : b)
+      : resolved.reduce((a, b) => a.result.totalCostPence <= b.result.totalCostPence ? a : b);
+    // Only badge it if it actually beats the current tariff
+    const delta = best.result.totalCostPence - baseline.current.totalCostPence;
+    if (compareIsExport && delta <= 0) return null;
+    if (!compareIsExport && delta >= 0) return null;
+    return best.code;
+  }, [sortedCompareRows, baselines, compareMeterId, compareIsExport]);
+
   // -----------------------------------------------------------------------
   // Render
   // -----------------------------------------------------------------------
@@ -750,21 +813,20 @@ export function Dashboard({ api }: DashboardProps) {
           <h2 style={{ margin: 0 }}>
             {givenName ? `Hi ${givenName}` : `Account ${account.number}`}
           </h2>
-          <p className="text-secondary" style={{ margin: '0.1rem 0 0', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            {givenName && <span>{account.number}</span>}
-            {nameError && (
-              <span title="Could not retrieve your name from the Octopus GraphQL API — check browser console for details"
-                style={{ opacity: 0.5, cursor: 'help', fontSize: '0.75rem' }}>
-                (name unavailable ⚠)
-              </span>
-            )}
-          </p>
-          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginTop: '0.2rem' }}>
-            {property?.address_line_1 && (
-              <span className="text-secondary" style={{ fontSize: '0.85rem' }}>
-                {[property.address_line_1, property.address_line_3, property.town].filter(Boolean).join(', ')}
-              </span>
-            )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', marginTop: '0.2rem' }}>
+            <p className="text-secondary" style={{ margin: 0, fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              {givenName && <span>{account.number}</span>}
+              {givenName && property?.address_line_1 && <span style={{ opacity: 0.4 }}>·</span>}
+              {property?.address_line_1 && (
+                <span>{[property.address_line_1, property.address_line_3, property.town].filter(Boolean).join(', ')}</span>
+              )}
+              {nameError && (
+                <span title="Could not retrieve your name from the Octopus GraphQL API — check browser console for details"
+                  style={{ opacity: 0.5, cursor: 'help', fontSize: '0.75rem' }}>
+                  (name unavailable ⚠)
+                </span>
+              )}
+            </p>
             {currentTariffName && (
               <span className="text-secondary" style={{ fontSize: '0.85rem' }}>
                 Tariff:{' '}
@@ -810,31 +872,31 @@ export function Dashboard({ api }: DashboardProps) {
         </div>
       </div>
 
+      {/* Timeframe selector */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: '0.4rem' }}>
+          {(['7days', '30days', '1year'] as Timeframe[]).map(tf => (
+            <button
+              key={tf}
+              onClick={() => setTimeframe(tf)}
+              style={{
+                padding: '0.35rem 0.85rem', fontSize: '0.85rem', borderRadius: '6px',
+                cursor: 'pointer', border: '1px solid var(--border-color)',
+                background: timeframe === tf ? 'var(--accent-color)' : 'var(--input-bg)',
+                color: timeframe === tf ? '#fff' : 'var(--text-primary)',
+              }}
+            >
+              {tf === '7days' ? '7 days' : tf === '30days' ? '30 days' : '12 months'}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* ------------------------------------------------------------------ */}
       {/* USAGE VIEW                                                          */}
       {/* ------------------------------------------------------------------ */}
       {appView === 'usage' && (
         <>
-          {/* Timeframe selector */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <div style={{ display: 'flex', gap: '0.4rem' }}>
-              {(['7days', '30days', '1year'] as Timeframe[]).map(tf => (
-                <button
-                  key={tf}
-                  onClick={() => setTimeframe(tf)}
-                  style={{
-                    padding: '0.35rem 0.85rem', fontSize: '0.85rem', borderRadius: '6px',
-                    cursor: 'pointer', border: '1px solid var(--border-color)',
-                    background: timeframe === tf ? 'var(--accent-color)' : 'var(--input-bg)',
-                    color: timeframe === tf ? '#fff' : 'var(--text-primary)',
-                  }}
-                >
-                  {tf === '7days' ? '7 days' : tf === '30days' ? '30 days' : '12 months'}
-                </button>
-              ))}
-            </div>
-          </div>
-
           {anyLoading && Object.keys(meterData).length === 0 && (
             <div className="panel text-center text-secondary" style={{ padding: '3rem' }}>
               Loading meter data…
@@ -898,17 +960,10 @@ export function Dashboard({ api }: DashboardProps) {
           {/* The table */}
           {baselines[compareMeterId] && (() => {
             const baseline = baselines[compareMeterId];
-            // Build rows: current tariff + Ofgem cap (pinned) + all available products
-            const compareMeter = meters.find(m => m.id === compareMeterId);
-            const isExportMeter = compareMeter?.isExport ?? false;
-            const fuelType = compareMeter?.fuelType ?? 'electricity';
-            const activeProductList = isExportMeter
-              ? exportProducts
-              : products.filter(p => fuelType === 'gas' ? p.has_gas : p.has_electricity);
-
-            const completedCount = Object.keys(altResults).length;
+            const isExportMeter = compareIsExport;
             const totalCount = activeProductList.length;
             const hasCurrentBaseline = baseline.tariffCode !== 'Unknown';
+            const sorted = sortedCompareRows;
 
             // Sort helper
             const handleSort = (col: SortCol) => {
@@ -920,32 +975,6 @@ export function Dashboard({ api }: DashboardProps) {
                 {sortCol === col ? (sortAsc ? '▲' : '▼') : '▲'}
               </span>
             );
-
-            // Build product rows
-            const productRows = activeProductList.map(p => ({
-                code: p.code,
-                name: p.full_name,
-                result: altResults[p.code],   // undefined = pending, null = failed
-              }));
-
-            // Sort
-            const sorted = [...productRows].sort((a, b) => {
-              const aR = a.result, bR = b.result;
-              // Pending/failed sink to bottom
-              if (!aR && !bR) return 0;
-              if (!aR) return 1;
-              if (!bR) return -1;
-              let diff = 0;
-              if (sortCol === 'name') diff = a.name.localeCompare(b.name);
-              else if (sortCol === 'cost') diff = aR.totalCostPence - bR.totalCostPence;
-              else if (sortCol === 'rate') diff = aR.averagePencePerKwh - bR.averagePencePerKwh;
-              else if (sortCol === 'delta') {
-                const aDelta = hasCurrentBaseline ? aR.totalCostPence - baseline.current.totalCostPence : aR.totalCostPence;
-                const bDelta = hasCurrentBaseline ? bR.totalCostPence - baseline.current.totalCostPence : bR.totalCostPence;
-                diff = aDelta - bDelta;
-              }
-              return sortAsc ? diff : -diff;
-            });
 
             // Column header style
             const thStyle = (col: SortCol): React.CSSProperties => ({
@@ -1076,9 +1105,7 @@ export function Dashboard({ api }: DashboardProps) {
                            : isExportMeter
                              ? (delta > 0 ? 'var(--success-color)' : delta < 0 ? 'var(--error-color)' : 'var(--text-secondary)')
                              : (delta < 0 ? 'var(--success-color)' : delta > 0 ? 'var(--error-color)' : 'var(--text-secondary)');
-                         const isBest = isExportMeter
-                           ? delta !== null && delta > 0 && sorted.every(r => !r.result || r.result === null || r.result.totalCostPence <= result.totalCostPence)
-                           : delta !== null && delta < 0 && sorted.every(r => !r.result || r.result === null || r.result.totalCostPence >= result.totalCostPence);
+                          const isBest = row.code === bestProductCode;
 
                         return (
                           <tr key={row.code} style={{ background: isEven ? 'transparent' : 'rgba(255,255,255,0.02)' }}>

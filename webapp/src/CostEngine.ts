@@ -151,6 +151,15 @@ export function calculateOfgemCapCost(
 
   const segments = getOfgemRatesForPeriod(region, fuelType, periodFrom, periodTo);
 
+  // Pre-cache segment timestamps to avoid repeated .getTime() calls inside the loop
+  const parsedSegments = segments.map(s => ({
+    start: s.from.getTime(),
+    end: s.to.getTime(),
+    unitRate: s.unitRate,
+    standingCharge: s.standingCharge,
+  }));
+  const fallbackRate = segments[0]?.unitRate ?? 0;
+
   let unitCostPence = 0;
   let totalConsumptionKwh = 0;
 
@@ -158,8 +167,10 @@ export function calculateOfgemCapCost(
     const slotStart = new Date(slot.interval_start).getTime();
 
     // Find which quarterly segment this slot falls in
-    const seg = segments.find(s => slotStart >= s.from.getTime() && slotStart < s.to.getTime());
-    const rate = seg?.unitRate ?? segments[0]?.unitRate ?? 0;
+    let rate = fallbackRate;
+    for (const s of parsedSegments) {
+      if (slotStart >= s.start && slotStart < s.end) { rate = s.unitRate; break; }
+    }
 
     unitCostPence += slot.consumption * rate;
     totalConsumptionKwh += slot.consumption;
@@ -172,10 +183,10 @@ export function calculateOfgemCapCost(
 
   // Standing charge: use the weighted average across overlapping quarters
   let standingChargePence = 0;
-  for (const seg of segments) {
+  for (const seg of parsedSegments) {
     const segDays = Math.max(
       0,
-      Math.round((seg.to.getTime() - seg.from.getTime()) / (1000 * 60 * 60 * 24))
+      Math.round((seg.end - seg.start) / (1000 * 60 * 60 * 24))
     );
     standingChargePence += segDays * seg.standingCharge;
   }
@@ -252,39 +263,53 @@ export class CostEngine {
       Math.round((periodTo.getTime() - periodFrom.getTime()) / (1000 * 60 * 60 * 24))
     );
 
+    // Pre-parse unit rate boundaries once — avoids constructing new Date() inside the inner loop
+    const parsedUnitRates = unitRates.map(r => ({
+      start: r.valid_from ? new Date(r.valid_from).getTime() : 0,
+      end: r.valid_to ? new Date(r.valid_to).getTime() : Infinity,
+      value: r.value_inc_vat,
+    }));
+    const fallbackUnitRate = unitRates[0]?.value_inc_vat ?? 0;
+
     let unitCostPence = 0;
     let totalConsumptionKwh = 0;
 
     for (const slot of consumption) {
       const slotStart = new Date(slot.interval_start).getTime();
 
-      const applicableRate = unitRates.find(r => {
-        const rateStart = r.valid_from ? new Date(r.valid_from).getTime() : 0;
-        const rateEnd = r.valid_to ? new Date(r.valid_to).getTime() : Infinity;
-        return slotStart >= rateStart && slotStart < rateEnd;
-      });
-
-      // For fixed/variable tariffs a single rate covers the whole period;
-      // fall back to the first entry if no exact match found.
-      const rateToApply = applicableRate?.value_inc_vat ?? unitRates[0]?.value_inc_vat ?? 0;
+      let rateToApply = fallbackUnitRate;
+      for (const r of parsedUnitRates) {
+        if (slotStart >= r.start && slotStart < r.end) {
+          rateToApply = r.value;
+          break;
+        }
+      }
 
       unitCostPence += slot.consumption * rateToApply;
       totalConsumptionKwh += slot.consumption;
     }
 
-    // Standing charges: accumulate p/day for each day in the period
+    // Standing charges: accumulate p/day for each day in the period.
+    // Pre-parse boundaries once, then do plain numeric comparisons per day.
     let standingChargePence = 0;
     if (standingChargeRates.length > 0) {
-      // Walk day-by-day over the period
+      const parsedSCRates = standingChargeRates.map(r => ({
+        start: r.valid_from ? new Date(r.valid_from).getTime() : 0,
+        end: r.valid_to ? new Date(r.valid_to).getTime() : Infinity,
+        value: r.value_inc_vat,
+      }));
+      const fallbackSCRate = standingChargeRates[0]?.value_inc_vat ?? 0;
+
       const cursor = new Date(periodFrom);
       while (cursor < periodTo) {
         const dayTs = cursor.getTime();
-        const sc = standingChargeRates.find(r => {
-          const rateStart = r.valid_from ? new Date(r.valid_from).getTime() : 0;
-          const rateEnd = r.valid_to ? new Date(r.valid_to).getTime() : Infinity;
-          return dayTs >= rateStart && dayTs < rateEnd;
-        });
-        const scRate = sc?.value_inc_vat ?? standingChargeRates[0]?.value_inc_vat ?? 0;
+        let scRate = fallbackSCRate;
+        for (const r of parsedSCRates) {
+          if (dayTs >= r.start && dayTs < r.end) {
+            scRate = r.value;
+            break;
+          }
+        }
         standingChargePence += scRate;
         cursor.setDate(cursor.getDate() + 1);
       }

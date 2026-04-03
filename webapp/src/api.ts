@@ -237,4 +237,95 @@ export class OctopusApi {
     const url = `${BASE_URL}/gas-meter-points/${mprn}/meters/${serial}/consumption/?period_from=${periodFrom}&period_to=${periodTo}&page_size=1500`;
     return this.fetchAllPages<ConsumptionResult>(url);
   }
+
+  /**
+   * Fetch daily unit rates for a Tracker (or any) tariff over a given period.
+   * Returns rates newest-first as the API provides them.
+   */
+  async fetchUnitRates(
+    productCode: string,
+    tariffCode: string,
+    fuelType: 'electricity' | 'gas',
+    periodFrom?: string,
+    periodTo?: string,
+  ): Promise<{ value_inc_vat: number; valid_from: string; valid_to: string | null }[]> {
+    const endpoint = fuelType === 'electricity' ? 'electricity-tariffs' : 'gas-tariffs';
+    let url = `${BASE_URL}/products/${productCode}/${endpoint}/${tariffCode}/standard-unit-rates/?page_size=1500`;
+    if (periodFrom) url += `&period_from=${toUtcIso(periodFrom)}`;
+    if (periodTo) url += `&period_to=${toUtcIso(periodTo)}`;
+    return this.fetchAllPages(url);
+  }
+
+  /**
+   * Fetch the standing charges for a tariff over a given period.
+   */
+  async fetchStandingCharges(
+    productCode: string,
+    tariffCode: string,
+    fuelType: 'electricity' | 'gas',
+    periodFrom?: string,
+    periodTo?: string,
+  ): Promise<{ value_inc_vat: number; valid_from: string; valid_to: string | null }[]> {
+    const endpoint = fuelType === 'electricity' ? 'electricity-tariffs' : 'gas-tariffs';
+    let url = `${BASE_URL}/products/${productCode}/${endpoint}/${tariffCode}/standing-charges/?page_size=1500`;
+    if (periodFrom) url += `&period_from=${toUtcIso(periodFrom)}`;
+    if (periodTo) url += `&period_to=${toUtcIso(periodTo)}`;
+    return this.fetchAllPages(url);
+  }
+
+  /**
+   * Given a Tracker product code like "SILVER-25-04-15", find the currently-active
+   * Tracker product by probing known successor versions. Tracker products follow the
+   * pattern SILVER-YY-MM-DD and are released roughly quarterly.
+   *
+   * Returns the current product's code and tariff code for the given region, or null
+   * if no current version can be found.
+   */
+  async findCurrentTrackerProduct(
+    baseProductCode: string,
+    regionLetter: string, // e.g. "_A"
+    fuelType: 'electricity' | 'gas',
+  ): Promise<{ productCode: string; tariffCode: string; fullName: string } | null> {
+    // Extract the prefix (e.g. "SILVER") — Tracker products all share the same prefix
+    const prefix = baseProductCode.split('-')[0];
+
+    // Generate candidate product codes for the next ~3 years of quarters
+    // Tracker versions are released roughly quarterly on the 1st or 15th of a month
+    const candidates: string[] = [];
+    const now = new Date();
+    for (let yearOffset = 0; yearOffset <= 3; yearOffset++) {
+      for (let month = 1; month <= 12; month++) {
+        const y = String((now.getFullYear() + yearOffset) % 100).padStart(2, '0');
+        const m = String(month).padStart(2, '0');
+        candidates.push(`${prefix}-${y}-${m}-01`);
+        candidates.push(`${prefix}-${y}-${m}-15`);
+      }
+    }
+
+    const region = regionLetter.replace('_', '');
+    const fuelPrefix = fuelType === 'electricity' ? 'E' : 'G';
+
+    // Try candidates in reverse-chronological order; return the first one that
+    // exists AND has available_to = null (meaning it's currently active)
+    // Sort newest first by parsing the date embedded in the code
+    const sorted = candidates
+      .filter(c => c > baseProductCode) // only versions newer than current
+      .sort((a, b) => b.localeCompare(a));
+
+    for (const productCode of sorted) {
+      try {
+        const res = await fetch(`${BASE_URL}/products/${productCode}/`);
+        if (!res.ok) continue;
+        const data = await res.json();
+        if (!data.is_tracker) continue;
+        // available_to null means currently open for sign-ups
+        if (data.available_to !== null) continue;
+        const tariffCode = `${fuelPrefix}-1R-${productCode}-${region}`;
+        return { productCode, tariffCode, fullName: data.full_name };
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  }
 }
