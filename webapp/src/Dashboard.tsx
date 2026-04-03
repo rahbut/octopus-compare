@@ -710,6 +710,10 @@ export function Dashboard({ api }: DashboardProps) {
 
   // Tracker view state
   const [trackerData, setTrackerData] = useState<TrackerData | null>(null);
+  const trackerDataRef = React.useRef<TrackerData | null>(null);
+  // Keep ref in sync so runAllComparisons can read latest trackerData without
+  // being recreated every time trackerData changes
+  trackerDataRef.current = trackerData;
   // Tracks the last timeframe+elecDataLength combo we fetched tracker data for — prevents double-fetches
   const lastTrackerFetchKey = React.useRef<string | null>(null);
   const [meterData, setMeterData] = useState<Record<string, MeterData>>({});
@@ -1229,9 +1233,10 @@ export function Dashboard({ api }: DashboardProps) {
 
     // If the user is on a Tracker tariff and there's a newer version available, inject it.
     // Tracker products are restricted and don't appear in the public product list.
+    // Use ref so we always read the latest value without recreating this callback.
     const extraProducts: Array<{ code: string; full_name: string; tariffCode: string }> = [];
-    if (!meter.isExport && trackerData?.currentTrackerProduct) {
-      const ct = trackerData.currentTrackerProduct;
+    if (!meter.isExport && trackerDataRef.current?.currentTrackerProduct) {
+      const ct = trackerDataRef.current.currentTrackerProduct;
       if (ct.productCode !== bl.productCode) {
         const fuelPrefix = meter.fuelType === 'gas' ? 'G' : 'E';
         const tariffCode = `${fuelPrefix}-1R-${ct.productCode}-${regionChar}`;
@@ -1278,7 +1283,7 @@ export function Dashboard({ api }: DashboardProps) {
     // Single state update — one re-render to show the completed table
     setAltResults(accumulated);
     setComparisonsRunning(false);
-  }, [api, products, exportProducts, trackerData]);
+  }, [api, products, exportProducts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // -----------------------------------------------------------------------
   // Derived
@@ -1313,8 +1318,8 @@ export function Dashboard({ api }: DashboardProps) {
       ? exportProducts
       : products.filter(p => compareFuelType === 'gas' ? p.has_gas : p.has_electricity);
     // Inject the current Tracker version if the user is on a Tracker tariff and it's not already listed
-    if (!compareIsExport && trackerData?.currentTrackerProduct) {
-      const ct = trackerData.currentTrackerProduct;
+    if (!compareIsExport && trackerDataRef.current?.currentTrackerProduct) {
+      const ct = trackerDataRef.current.currentTrackerProduct;
       const baseline = baselines[compareMeterId];
       if (!base.find(p => p.code === ct.productCode) && ct.productCode !== baseline?.productCode) {
         return [...base, {
@@ -1333,7 +1338,7 @@ export function Dashboard({ api }: DashboardProps) {
       }
     }
     return base;
-  }, [compareIsExport, compareFuelType, products, exportProducts, trackerData, baselines, compareMeterId]);
+  }, [compareIsExport, compareFuelType, products, exportProducts, baselines, compareMeterId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sortedCompareRows = useMemo(() => {
     const rows = activeProductList.map(p => ({
