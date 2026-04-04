@@ -53,6 +53,28 @@ function App() {
           <Dashboard api={api} />
         )}
       </main>
+
+      <footer className="app-footer">
+        <span className="app-footer-badge">🔒 Privacy-first</span>
+        <span className="app-footer-sep">·</span>
+        <a
+          className="app-footer-badge"
+          href="https://github.com/rahbut/octopus-compare"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Open Source
+        </a>
+        <span className="app-footer-sep">·</span>
+        <a
+          className="app-footer-badge"
+          href="https://github.com/rahbut/octopus-compare"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          GitHub ↗
+        </a>
+      </footer>
     </div>
   );
 }

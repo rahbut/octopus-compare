@@ -177,3 +177,31 @@ button:disabled {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+.app-footer {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 1.25rem 2rem;
+  margin-top: 2rem;
+  border-top: 1px solid var(--border-color);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.app-footer-badge {
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+a.app-footer-badge:hover {
+  color: var(--accent-color);
+}
+
+.app-footer-sep {
+  color: var(--border-color);
+  user-select: none;
+}

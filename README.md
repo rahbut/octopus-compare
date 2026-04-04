@@ -1,5 +1,7 @@
 # Octopus Compare
 
+**Live app: [octopus.purle.net](https://octopus.purle.net)**
+
 A privacy-first, fully client-side web app for UK [Octopus Energy](https://octopus.energy) customers to visualise their energy usage and compare the cost of every available Octopus tariff against their real consumption data.
 
 ---
