@@ -304,7 +304,7 @@ export class CostEngine {
     let unitCostPence = 0;
     let totalConsumptionKwh = 0;
 
-    for (const slot of consumption) {
+    for (const slot of covered) {
       const slotStart = new Date(slot.interval_start).getTime();
 
       let rateToApply = fallbackUnitRate;

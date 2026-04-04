@@ -72,6 +72,13 @@ interface BaselineResult {
   regionLetter: string;
 }
 
+/** Result for a single alternative tariff in the comparison table */
+interface AltResult {
+  result: CostCalculation;
+  /** Current tariff cost computed over the same covered window (only set for partial tariffs) */
+  currentForSamePeriod: CostCalculation | null;
+}
+
 interface TrackerDayRate {
   date: string;        // local date key YYYY-MM-DD
   label: string;       // e.g. "3 Apr"
@@ -783,8 +790,8 @@ export function Dashboard({ api }: DashboardProps) {
   const [compareMeterId, setCompareMeterId] = useState<string>('');
   /** Baseline keyed by meter ID — computed for every meter, not just electricity */
   const [baselines, setBaselines] = useState<Record<string, BaselineResult>>({});
-  /** productCode → calculated result (undefined = not yet done, null = failed) */
-  const [altResults, setAltResults] = useState<Record<string, CostCalculation | null>>({});
+  /** productCode → calculated result (undefined = not yet done, null = failed/unavailable) */
+  const [altResults, setAltResults] = useState<Record<string, AltResult | null>>({});
   /** Lightweight counter used only for progress bar — avoids re-renders from altResults during run */
   const [completedCount, setCompletedCount] = useState(0);
   const [comparisonsRunning, setComparisonsRunning] = useState(false);
@@ -1302,7 +1309,26 @@ export function Dashboard({ api }: DashboardProps) {
 
     // Accumulate all results locally; only the cheap counter triggers re-renders during the run.
     // A single setAltResults call at the end commits everything at once.
-    const accumulated: Record<string, CostCalculation | null> = {};
+    const accumulated: Record<string, AltResult | null> = {};
+
+    /** For a partial-period result, compute the current tariff's cost over the same covered slots */
+    const computeCurrentForSamePeriod = async (altCalc: CostCalculation): Promise<CostCalculation | null> => {
+      if (!altCalc.coveredFrom || !altCalc.coveredTo) return null;
+      const coveredSlots = consumption.filter(s => {
+        const t = new Date(s.interval_start).getTime();
+        return t >= new Date(altCalc.coveredFrom!).getTime() && t < new Date(altCalc.coveredTo!).getTime();
+      });
+      if (!coveredSlots.length) return null;
+      try {
+        const [curRates, curSC] = await Promise.all([
+          CostEngine.fetchTariffRates(api, bl.productCode, bl.tariffCode, meter.fuelType, altCalc.coveredFrom, altCalc.coveredTo),
+          CostEngine.fetchStandingCharges(api, bl.productCode, bl.tariffCode, meter.fuelType, altCalc.coveredFrom, altCalc.coveredTo),
+        ]);
+        return CostEngine.calculateCost(coveredSlots, curRates, curSC);
+      } catch {
+        return null;
+      }
+    };
 
     const standardTasks = compatibleProducts.map(async product => {
       // Export tariffs use E- prefix (they're electricity export unit rates)
@@ -1314,7 +1340,11 @@ export function Dashboard({ api }: DashboardProps) {
           CostEngine.fetchTariffRates(api, product.code, tariffCode, meter.fuelType, periodFrom, periodTo),
           CostEngine.fetchStandingCharges(api, product.code, tariffCode, meter.fuelType, periodFrom, periodTo),
         ]);
-        accumulated[product.code] = CostEngine.calculateCost(consumption, unitRates, standingCharges);
+        const result = CostEngine.calculateCost(consumption, unitRates, standingCharges);
+        const fullDays = bl.current.periodDays || 1;
+        const isPartial = (result.periodDays || 1) < fullDays - 1;
+        const currentForSamePeriod = isPartial ? await computeCurrentForSamePeriod(result) : null;
+        accumulated[product.code] = { result, currentForSamePeriod };
       } catch {
         accumulated[product.code] = null;
       }
@@ -1327,7 +1357,11 @@ export function Dashboard({ api }: DashboardProps) {
           CostEngine.fetchTariffRates(api, product.code, product.tariffCode, meter.fuelType, periodFrom, periodTo),
           CostEngine.fetchStandingCharges(api, product.code, product.tariffCode, meter.fuelType, periodFrom, periodTo),
         ]);
-        accumulated[product.code] = CostEngine.calculateCost(consumption, unitRates, standingCharges);
+        const result = CostEngine.calculateCost(consumption, unitRates, standingCharges);
+        const fullDays = bl.current.periodDays || 1;
+        const isPartial = (result.periodDays || 1) < fullDays - 1;
+        const currentForSamePeriod = isPartial ? await computeCurrentForSamePeriod(result) : null;
+        accumulated[product.code] = { result, currentForSamePeriod };
       } catch {
         accumulated[product.code] = null;
       }
@@ -1400,13 +1434,14 @@ export function Dashboard({ api }: DashboardProps) {
     const rows = activeProductList.map(p => ({
       code: p.code,
       name: p.full_name,
-      result: altResults[p.code] as CostCalculation | null | undefined,
+      altResult: altResults[p.code] as AltResult | null | undefined,
     }));
     return rows.sort((a, b) => {
-      const aR = a.result, bR = b.result;
-      if (!aR && !bR) return 0;
-      if (!aR) return 1;
-      if (!bR) return -1;
+      const aA = a.altResult, bA = b.altResult;
+      if (!aA && !bA) return 0;
+      if (!aA) return 1;
+      if (!bA) return -1;
+      const aR = aA.result, bR = bA.result;
       const baseline = baselines[compareMeterId];
       const hasBaseline = baseline?.tariffCode !== 'Unknown';
       const fullDays = baseline?.current.periodDays || 1;
@@ -1418,9 +1453,14 @@ export function Dashboard({ api }: DashboardProps) {
       else if (sortCol === 'cost') diff = dailyCostA - dailyCostB;
       else if (sortCol === 'rate') diff = aR.averagePencePerKwh - bR.averagePencePerKwh;
       else if (sortCol === 'delta') {
-        const baselineForA = hasBaseline ? (baseline.current.totalCostPence / fullDays) * Math.max(aR.periodDays || 1, 1) : 0;
-        const baselineForB = hasBaseline ? (baseline.current.totalCostPence / fullDays) * Math.max(bR.periodDays || 1, 1) : 0;
-        diff = (aR.totalCostPence - baselineForA) - (bR.totalCostPence - baselineForB);
+        // Use actual current-tariff cost for partial tariffs, otherwise daily average
+        const baselinePenceA = hasBaseline
+          ? (aA.currentForSamePeriod?.totalCostPence ?? (baseline.current.totalCostPence / fullDays) * Math.max(aR.periodDays || 1, 1))
+          : 0;
+        const baselinePenceB = hasBaseline
+          ? (bA.currentForSamePeriod?.totalCostPence ?? (baseline.current.totalCostPence / fullDays) * Math.max(bR.periodDays || 1, 1))
+          : 0;
+        diff = (aR.totalCostPence - baselinePenceA) - (bR.totalCostPence - baselinePenceB);
       }
       return sortAsc ? diff : -diff;
     });
@@ -1428,7 +1468,7 @@ export function Dashboard({ api }: DashboardProps) {
 
   // O(N) single pass to find the best product code — uses daily cost for fair partial comparison
   const bestProductCode = useMemo(() => {
-    const resolved = sortedCompareRows.filter(r => r.result != null) as Array<{ code: string; name: string; result: CostCalculation }>;
+    const resolved = sortedCompareRows.filter(r => r.altResult != null) as Array<{ code: string; name: string; altResult: AltResult }>;
     if (!resolved.length) return null;
     const baseline = baselines[compareMeterId];
     if (!baseline) return null;
@@ -1436,9 +1476,13 @@ export function Dashboard({ api }: DashboardProps) {
     const dailyCost = (r: CostCalculation) => r.totalCostPence / Math.max(r.periodDays || 1, 1);
     const baselineDaily = baseline.current.totalCostPence / fullDays;
     const best = compareIsExport
-      ? resolved.reduce((a, b) => dailyCost(a.result) >= dailyCost(b.result) ? a : b)
-      : resolved.reduce((a, b) => dailyCost(a.result) <= dailyCost(b.result) ? a : b);
-    const delta = dailyCost(best.result) - baselineDaily;
+      ? resolved.reduce((a, b) => dailyCost(a.altResult.result) >= dailyCost(b.altResult.result) ? a : b)
+      : resolved.reduce((a, b) => dailyCost(a.altResult.result) <= dailyCost(b.altResult.result) ? a : b);
+    // For partial tariffs, compare against the actual current-tariff cost for the same window
+    const bestCurrentPencePerDay = best.altResult.currentForSamePeriod
+      ? best.altResult.currentForSamePeriod.totalCostPence / Math.max(best.altResult.currentForSamePeriod.periodDays || 1, 1)
+      : baselineDaily;
+    const delta = dailyCost(best.altResult.result) - bestCurrentPencePerDay;
     if (compareIsExport && delta <= 0) return null;
     if (!compareIsExport && delta >= 0) return null;
     return best.code;
@@ -1769,9 +1813,9 @@ export function Dashboard({ api }: DashboardProps) {
 
                        {/* Available tariffs */}
                        {sorted.map((row, i) => {
-                         const result = row.result;
+                         const altResult = row.altResult;
                          const isEven = i % 2 === 0;
-                         if (result === undefined) {
+                         if (altResult === undefined) {
                            return (
                              <tr key={row.code} style={{ opacity: 0.4 }}>
                                <td style={cellStyle()}>{row.name}<span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{row.code}</span></td>
@@ -1779,7 +1823,7 @@ export function Dashboard({ api }: DashboardProps) {
                              </tr>
                            );
                          }
-                         if (result === null) {
+                         if (altResult === null) {
                            return (
                              <tr key={row.code} style={{ opacity: 0.35 }}>
                                <td style={cellStyle()}>{row.name}<span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{row.code}</span></td>
@@ -1787,19 +1831,21 @@ export function Dashboard({ api }: DashboardProps) {
                              </tr>
                            );
                          }
+                         const { result, currentForSamePeriod } = altResult;
                          const isBest = row.code === bestProductCode;
                          const fullDays = baseline.current.periodDays || 1;
                          const coveredDays = result.periodDays || 1;
                          const isPartial = coveredDays < fullDays - 1;
 
-                         // For a fair comparison, compare this tariff's cost over its covered days
-                         // against what the current tariff cost over those same days.
-                         // We use baseline's average daily cost × coveredDays as the baseline reference.
-                         const baselineForSamePeriod = hasCurrentBaseline
-                           ? (baseline.current.totalCostPence / fullDays) * coveredDays
+                         // For partial tariffs: use the actual current-tariff cost over those same days.
+                         // For full-period tariffs: compare against the full baseline as normal.
+                         const baselinePence = hasCurrentBaseline
+                           ? (isPartial && currentForSamePeriod !== null
+                               ? currentForSamePeriod.totalCostPence
+                               : baseline.current.totalCostPence)
                            : null;
-                         const delta = baselineForSamePeriod !== null
-                           ? result.totalCostPence - baselineForSamePeriod
+                         const delta = baselinePence !== null
+                           ? result.totalCostPence - baselinePence
                            : null;
                          const deltaColor = delta === null ? undefined
                            : isExportMeter
@@ -1817,6 +1863,11 @@ export function Dashboard({ api }: DashboardProps) {
                              <td style={{ ...cellStyle(true), fontWeight: 600 }}>
                                {penceToGBP(result.totalCostPence)}
                                {isPartial && <span style={{ fontSize: '0.68rem', fontWeight: 400, color: 'var(--text-secondary)' }}> /{coveredDays}d</span>}
+                               {isPartial && currentForSamePeriod !== null && (
+                                 <span style={{ display: 'block', fontSize: '0.68rem', fontWeight: 400, color: 'var(--text-secondary)' }}>
+                                   vs {penceToGBP(currentForSamePeriod.totalCostPence)} current
+                                 </span>
+                               )}
                              </td>
                              <td style={{ ...cellStyle(true), color: 'var(--text-secondary)' }}>{penceToGBP(result.standingChargePence)}</td>
                              <td style={cellStyle(true)}>{result.averagePencePerKwh.toFixed(2)}p/kWh</td>
