@@ -786,6 +786,9 @@ export function Dashboard({ api }: DashboardProps) {
   const lastTrackerFetchKey = React.useRef<string | null>(null);
   const [meterData, setMeterData] = useState<Record<string, MeterData>>({});
 
+  // Cached tariff product name — survives baseline resets on period change
+  const cachedProductFullName = React.useRef<Record<string, string | null>>({});
+
   // Compare view state
   const [compareMeterId, setCompareMeterId] = useState<string>('');
   /** Baseline keyed by meter ID — computed for every meter, not just electricity */
@@ -1017,6 +1020,7 @@ export function Dashboard({ api }: DashboardProps) {
               const productFullName = inList?.full_name
                 ?? (await api.getProductDetail(productCode))?.full_name
                 ?? null;
+              if (productFullName) cachedProductFullName.current[meter.id] = productFullName;
               setBaselines(prev => ({
                 ...prev,
                 [meter.id]: { current, ofgem, tariffCode, productCode, productFullName, regionLetter },
@@ -1389,7 +1393,8 @@ export function Dashboard({ api }: DashboardProps) {
   const currentTariffName = useMemo(() => {
     if (!importElec) return null;
     const bl = baselines[importElec.id];
-    if (bl?.productFullName) return { full: bl.productFullName, code: activeTariffCode };
+    const fullName = bl?.productFullName ?? cachedProductFullName.current[importElec.id] ?? null;
+    if (fullName) return { full: fullName, code: activeTariffCode };
     if (activeTariffCode) return { full: null, code: activeTariffCode };
     return null;
   }, [importElec, baselines, activeTariffCode]);
