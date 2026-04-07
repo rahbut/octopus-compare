@@ -11,7 +11,7 @@ A privacy-first, fully client-side web app for UK [Octopus Energy](https://octop
 - **Usage view** — Half-hourly electricity (import & export) and gas consumption with costs derived from your actual tariff. Supports 7-day, 30-day, and 12-month presets plus side-by-side period-on-period comparison.
 - **Tracker view** — Automatically shown for Octopus Tracker customers. Displays yesterday/today/tomorrow unit rates, trend chart, and savings vs Flexible Octopus over your selected period.
 - **Compare view** — Applies your real consumption to every tariff currently available on Octopus, plus the Ofgem Price Cap as a reference benchmark. Produces a sortable table of total cost, standing charges, effective rate, and savings/surplus vs your current tariff.
-- **Privacy-first** — Your API key is held only in React session state. It is never written to `localStorage`, cookies, or any server.
+- **Privacy-first** — Your API key and account number are held only in React session state by default. An optional "Remember me" checkbox allows them to be persisted to `localStorage` for convenience; signing out removes them immediately.
 
 ---
 
@@ -94,7 +94,9 @@ pip install requests openpyxl
 
 ## Privacy
 
-No credentials are ever persisted. Your API key and account number exist only in React component state for the duration of your browser session. Closing or refreshing the tab clears them entirely.
+By default your API key and account number exist only in React component state for the duration of your browser session — closing or refreshing the tab clears them entirely.
+
+If you tick **Remember me** on the login screen, the credentials are written to `localStorage` so they survive browser restarts. Signing out removes them from `localStorage` immediately. No credentials are ever sent to any server other than the Octopus Energy API directly.
 
 All API calls are made directly from your browser to the Octopus Energy API — there is no intermediary server.
 

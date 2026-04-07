@@ -4,8 +4,16 @@ import { Dashboard } from './Dashboard';
 import { OctopusApi } from './api';
 
 function App() {
-  const [credentials, setCredentials] = useState<{ apiKey: string; accountNum: string } | null>(null);
-  const [api, setApi] = useState<OctopusApi | null>(null);
+  const savedApiKey = localStorage.getItem('octopus_api_key');
+  const savedAccountNum = localStorage.getItem('octopus_account_num');
+  const initialCredentials = savedApiKey && savedAccountNum
+    ? { apiKey: savedApiKey, accountNum: savedAccountNum }
+    : null;
+
+  const [credentials, setCredentials] = useState<{ apiKey: string; accountNum: string } | null>(initialCredentials);
+  const [api, setApi] = useState<OctopusApi | null>(
+    initialCredentials ? new OctopusApi(initialCredentials.apiKey, initialCredentials.accountNum) : null
+  );
   const [theme, setTheme] = useState<'light' | 'dark'>(
     window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
   );
@@ -22,6 +30,8 @@ function App() {
   const handleLogout = () => {
     setCredentials(null);
     setApi(null);
+    localStorage.removeItem('octopus_api_key');
+    localStorage.removeItem('octopus_account_num');
   };
 
   const toggleTheme = () => {

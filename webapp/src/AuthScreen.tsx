@@ -1,4 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+
+const STORAGE_KEY_API = 'octopus_api_key';
+const STORAGE_KEY_ACCOUNT = 'octopus_account_num';
 
 interface AuthScreenProps {
   onLogin: (apiKey: string, accountNum: string) => void;
@@ -7,11 +10,31 @@ interface AuthScreenProps {
 export function AuthScreen({ onLogin }: AuthScreenProps) {
   const [apiKey, setApiKey] = useState('');
   const [accountNum, setAccountNum] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
+
+  useEffect(() => {
+    const savedApiKey = localStorage.getItem(STORAGE_KEY_API);
+    const savedAccountNum = localStorage.getItem(STORAGE_KEY_ACCOUNT);
+    if (savedApiKey && savedAccountNum) {
+      setApiKey(savedApiKey);
+      setAccountNum(savedAccountNum);
+      setRememberMe(true);
+    }
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (apiKey && accountNum) {
-      onLogin(apiKey.trim(), accountNum.trim());
+    const trimmedKey = apiKey.trim();
+    const trimmedAccount = accountNum.trim();
+    if (trimmedKey && trimmedAccount) {
+      if (rememberMe) {
+        localStorage.setItem(STORAGE_KEY_API, trimmedKey);
+        localStorage.setItem(STORAGE_KEY_ACCOUNT, trimmedAccount);
+      } else {
+        localStorage.removeItem(STORAGE_KEY_API);
+        localStorage.removeItem(STORAGE_KEY_ACCOUNT);
+      }
+      onLogin(trimmedKey, trimmedAccount);
     }
   };
 
@@ -48,13 +71,24 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
             />
           </div>
 
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', userSelect: 'none', alignSelf: 'flex-start', whiteSpace: 'nowrap' }}>
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+            />
+            Remember me
+          </label>
+
           <button type="submit" className="mt-2" disabled={!apiKey || !accountNum}>
             Connect Securely
           </button>
         </form>
 
         <p className="text-secondary text-center mt-2" style={{ fontSize: '0.8rem', opacity: 0.7 }}>
-          Your API key is only stored in your browser's memory and is never sent to any server other than Octopus Energy directly.{' '}
+          {rememberMe
+            ? 'Your credentials will be saved in your browser\'s local storage. Sign out to remove them.'
+            : 'Your API key is only stored in your browser\'s memory and is never sent to any server other than Octopus Energy directly.'}{' '}
           <a
             href="https://octopus.energy/dashboard/new/accounts/personal-details/api-access"
             target="_blank"
