@@ -288,15 +288,21 @@ export class OctopusApi {
    * Returns { productCode, fullName } for the live version, or null on failure.
    */
   async findLiveTrackerProduct(): Promise<{ productCode: string; fullName: string } | null> {
-    // Generate candidate seed codes by stepping back month by month from today.
-    // Tracker versions change a few times a year so we'll find one within ~12 months.
+    // Tracker tariffs align with quarters (Jan, Apr, Jul, Oct), so probe quarter
+    // start dates stepping backwards — at most a handful of requests before hitting
+    // a valid product, avoiding unnecessary API calls mid-quarter.
     const candidates: string[] = [];
     const now = new Date();
-    for (let i = 0; i < 14; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const yy = String(d.getFullYear()).slice(-2);
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const quarterMonth = (m: number) => [1, 4, 7, 10][Math.floor(m / 3)]; // 0-indexed month → quarter start month (1-indexed)
+    let year = now.getFullYear();
+    let month = quarterMonth(now.getMonth()); // start at the current quarter
+    for (let i = 0; i < 8; i++) {
+      const yy = String(year).slice(-2);
+      const mm = String(month).padStart(2, '0');
       candidates.push(`SILVER-${yy}-${mm}-01`);
+      // Step back one quarter
+      month -= 3;
+      if (month < 1) { month += 12; year -= 1; }
     }
 
     // Find the first candidate that exists
