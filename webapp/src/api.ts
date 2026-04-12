@@ -288,7 +288,7 @@ export class OctopusApi {
   async findLiveTrackerProduct(): Promise<{ productCode: string; fullName: string } | null> {
     // Seed with a known historical code. Any valid past SILVER-* code works —
     // the chain-walk will follow available_to forward to today's live version.
-    const SEED = 'SILVER-24-04-15';
+    const SEED = 'SILVER-25-04-15';
     let currentCode = SEED;
 
     for (let hop = 0; hop < 12; hop++) {
