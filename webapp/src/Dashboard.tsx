@@ -782,6 +782,12 @@ export function Dashboard({ api }: DashboardProps) {
   // Keep ref in sync so runAllComparisons can read latest trackerData without
   // being recreated every time trackerData changes
   trackerDataRef.current = trackerData;
+
+  // The currently-live Tracker product — fetched for all users so the compare
+  // view can show Tracker regardless of whether the user is currently on it.
+  const [liveTrackerProduct, setLiveTrackerProduct] = useState<{ productCode: string; fullName: string } | null>(null);
+  const liveTrackerProductRef = React.useRef<{ productCode: string; fullName: string } | null>(null);
+  liveTrackerProductRef.current = liveTrackerProduct;
   // Tracks the last timeframe+elecDataLength combo we fetched tracker data for — prevents double-fetches
   const lastTrackerFetchKey = React.useRef<string | null>(null);
   const [meterData, setMeterData] = useState<Record<string, MeterData>>({});
@@ -811,11 +817,13 @@ export function Dashboard({ api }: DashboardProps) {
     async function init() {
       try {
         setLoading(true);
-        const [accData, prodData, name] = await Promise.all([
+        const [accData, prodData, name, liveTracker] = await Promise.all([
           api.getAccountDetails(),
           api.getProducts(),
           api.getViewerName(),
+          api.findLiveTrackerProduct(),
         ]);
+        setLiveTrackerProduct(liveTracker);
         setGivenName(name);
         if (!name) setNameError(true);
 
@@ -1298,16 +1306,16 @@ export function Dashboard({ api }: DashboardProps) {
       ? productList
       : productList.filter(p => meter.fuelType === 'gas' ? p.has_gas : p.has_electricity);
 
-    // If the user is on a Tracker tariff and there's a newer version available, inject it.
-    // Tracker products are restricted and don't appear in the public product list.
-    // Use ref so we always read the latest value without recreating this callback.
+    // Inject the live Tracker product for cost calculation if it's not already in the
+    // standard product list. Use a ref so this callback doesn't need to be recreated
+    // whenever liveTrackerProduct state changes.
     const extraProducts: Array<{ code: string; full_name: string; tariffCode: string }> = [];
-    if (!meter.isExport && trackerDataRef.current?.currentTrackerProduct) {
-      const ct = trackerDataRef.current.currentTrackerProduct;
-      if (ct.productCode !== bl.productCode) {
+    if (!meter.isExport && liveTrackerProductRef.current) {
+      const lt = liveTrackerProductRef.current;
+      if (!compatibleProducts.find(p => p.code === lt.productCode)) {
         const fuelPrefix = meter.fuelType === 'gas' ? 'G' : 'E';
-        const tariffCode = `${fuelPrefix}-1R-${ct.productCode}-${regionChar}`;
-        extraProducts.push({ code: ct.productCode, full_name: ct.fullName, tariffCode });
+        const tariffCode = `${fuelPrefix}-1R-${lt.productCode}-${regionChar}`;
+        extraProducts.push({ code: lt.productCode, full_name: lt.fullName, tariffCode });
       }
     }
 
@@ -1412,14 +1420,14 @@ export function Dashboard({ api }: DashboardProps) {
     const base = compareIsExport
       ? exportProducts
       : products.filter(p => compareFuelType === 'gas' ? p.has_gas : p.has_electricity);
-    // Inject the current Tracker version if the user is on a Tracker tariff and it's not already listed
-    if (!compareIsExport && trackerDataRef.current?.currentTrackerProduct) {
-      const ct = trackerDataRef.current.currentTrackerProduct;
-      const baseline = baselines[compareMeterId];
-      if (!base.find(p => p.code === ct.productCode) && ct.productCode !== baseline?.productCode) {
+    // Inject the live Tracker product if it's not already in the public product list.
+    // We always do this regardless of whether the user is currently on Tracker —
+    // Tracker products don't appear in the public /products/ API response.
+    if (!compareIsExport && liveTrackerProduct) {
+      if (!base.find(p => p.code === liveTrackerProduct.productCode)) {
         return [...base, {
-          code: ct.productCode,
-          full_name: ct.fullName,
+          code: liveTrackerProduct.productCode,
+          full_name: liveTrackerProduct.fullName,
           display_name: 'Octopus Tracker',
           description: '',
           is_variable: true,
@@ -1433,7 +1441,7 @@ export function Dashboard({ api }: DashboardProps) {
       }
     }
     return base;
-  }, [compareIsExport, compareFuelType, products, exportProducts, baselines, compareMeterId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [compareIsExport, compareFuelType, products, exportProducts, liveTrackerProduct]);
 
   const sortedCompareRows = useMemo(() => {
     const rows = activeProductList.map(p => ({

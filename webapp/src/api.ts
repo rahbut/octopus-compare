@@ -277,6 +277,47 @@ export class OctopusApi {
   }
 
   /**
+   * Find the currently-live Tracker product without needing to know the user's
+   * current tariff. Seeds from a known historical SILVER-* code and walks the
+   * available_to chain forward until it reaches the live version (available_to === null).
+   *
+   * Returns { productCode, fullName } for the live version, or null on failure.
+   * Unlike findCurrentTrackerProduct this never returns null just because the user
+   * is already on the current version — it is unconditional.
+   */
+  async findLiveTrackerProduct(): Promise<{ productCode: string; fullName: string } | null> {
+    // Seed with a known historical code. Any valid past SILVER-* code works —
+    // the chain-walk will follow available_to forward to today's live version.
+    const SEED = 'SILVER-24-04-15';
+    let currentCode = SEED;
+
+    for (let hop = 0; hop < 12; hop++) {
+      try {
+        const res = await fetch(`${BASE_URL}/products/${currentCode}/`);
+        if (!res.ok) break;
+        const data = await res.json();
+
+        if (data.available_to === null) {
+          return { productCode: currentCode, fullName: data.full_name };
+        }
+
+        const nextDate = new Date(data.available_to);
+        const yy = String(nextDate.getFullYear()).slice(-2);
+        const mm = String(nextDate.getMonth() + 1).padStart(2, '0');
+        const dd = String(nextDate.getDate()).padStart(2, '0');
+        const nextCode = `SILVER-${yy}-${mm}-${dd}`;
+
+        if (nextCode === currentCode) break;
+        currentCode = nextCode;
+      } catch {
+        break;
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Given a Tracker product code like "SILVER-25-04-15", find the currently-active
    * Tracker product by following the chain of successor versions.
    *
