@@ -278,19 +278,43 @@ export class OctopusApi {
 
   /**
    * Find the currently-live Tracker product without needing to know the user's
-   * current tariff. Seeds from a known historical SILVER-* code and walks the
-   * available_to chain forward until it reaches the live version (available_to === null).
+   * current tariff. Tracker products are not listed by the public /products/ API,
+   * so we must fetch by code directly.
+   *
+   * We find a valid seed by stepping backwards month by month from today, probing
+   * SILVER-YY-MM-01 until we get a 200. From there we walk the available_to chain
+   * forward until we reach the live version (available_to === null).
    *
    * Returns { productCode, fullName } for the live version, or null on failure.
-   * Unlike findCurrentTrackerProduct this never returns null just because the user
-   * is already on the current version — it is unconditional.
    */
   async findLiveTrackerProduct(): Promise<{ productCode: string; fullName: string } | null> {
-    // Seed with a known historical code. Any valid past SILVER-* code works —
-    // the chain-walk will follow available_to forward to today's live version.
-    const SEED = 'SILVER-25-04-15';
-    let currentCode = SEED;
+    // Generate candidate seed codes by stepping back month by month from today.
+    // Tracker versions change a few times a year so we'll find one within ~12 months.
+    const candidates: string[] = [];
+    const now = new Date();
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const yy = String(d.getFullYear()).slice(-2);
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      candidates.push(`SILVER-${yy}-${mm}-01`);
+    }
 
+    // Find the first candidate that exists
+    let currentCode: string | null = null;
+    for (const candidate of candidates) {
+      try {
+        const res = await fetch(`${BASE_URL}/products/${candidate}/`);
+        if (res.ok) {
+          currentCode = candidate;
+          break;
+        }
+      } catch {
+        // try next
+      }
+    }
+    if (!currentCode) return null;
+
+    // Walk the available_to chain forward to the live version
     for (let hop = 0; hop < 12; hop++) {
       try {
         const res = await fetch(`${BASE_URL}/products/${currentCode}/`);
