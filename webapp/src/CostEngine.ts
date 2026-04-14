@@ -260,16 +260,21 @@ export class CostEngine {
     }
 
     // Determine the window actually covered by the unit rates.
-    // Only use rates that have an explicit valid_to to determine the end boundary —
-    // open-ended rates (valid_to: null) mean the tariff is still active, so we cap
-    // at the latest consumption slot rather than including everything to infinity.
+    // If ANY rate has valid_to: null it means the tariff is still active and
+    // coverage extends indefinitely — so we set rateEnd to Infinity.  Previously
+    // this only triggered when ALL rates were open-ended, which caused the
+    // consumption filter to clip slots that fell after the last explicit valid_to
+    // (e.g. after a quarterly boundary) even though a successor rate existed.
+    const hasOpenEndedRate = unitRates.some(r => r.valid_to === null);
     const ratesWithEnd = unitRates.filter(r => r.valid_to !== null);
     const rateStart = unitRates.length
       ? Math.min(...unitRates.map(r => r.valid_from ? new Date(r.valid_from).getTime() : 0))
       : 0;
-    const rateEnd = ratesWithEnd.length
-      ? Math.max(...ratesWithEnd.map(r => new Date(r.valid_to!).getTime()))
-      : Infinity; // all rates are open-ended — full coverage, no filtering needed
+    const rateEnd = hasOpenEndedRate
+      ? Infinity
+      : ratesWithEnd.length
+        ? Math.max(...ratesWithEnd.map(r => new Date(r.valid_to!).getTime()))
+        : Infinity; // no rates at all — no filtering needed
 
     // Filter consumption to only slots covered by the rates
     const covered = rateEnd === Infinity

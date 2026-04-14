@@ -7,6 +7,8 @@ import {
   type Product,
   type ConsumptionResult,
   type Agreement,
+  groupProductFamilies,
+  productFamilyPrefix,
 } from './api';
 import {
   CostEngine,
@@ -788,6 +790,10 @@ export function Dashboard({ api }: DashboardProps) {
   const [liveTrackerProduct, setLiveTrackerProduct] = useState<{ productCode: string; fullName: string } | null>(null);
   const liveTrackerProductRef = React.useRef<{ productCode: string; fullName: string } | null>(null);
   liveTrackerProductRef.current = liveTrackerProduct;
+
+  // Full product catalogue (last 12+ months) and family grouping for rate chaining
+  const productCatalogueRef = React.useRef<Product[]>([]);
+  const familyMapRef = React.useRef<Map<string, Product[]>>(new Map());
   // Tracks the last timeframe+elecDataLength combo we fetched tracker data for — prevents double-fetches
   const lastTrackerFetchKey = React.useRef<string | null>(null);
   const [meterData, setMeterData] = useState<Record<string, MeterData>>({});
@@ -817,12 +823,15 @@ export function Dashboard({ api }: DashboardProps) {
     async function init() {
       try {
         setLoading(true);
-        const [accData, prodData, name, liveTracker] = await Promise.all([
+        const [accData, prodData, name, liveTracker, catalogue] = await Promise.all([
           api.getAccountDetails(),
           api.getProducts(),
           api.getViewerName(),
           api.findLiveTrackerProduct(),
+          api.getProductCatalogue(),
         ]);
+        productCatalogueRef.current = catalogue;
+        familyMapRef.current = groupProductFamilies(catalogue);
         setLiveTrackerProduct(liveTracker);
         setGivenName(name);
         if (!name) setNameError(true);
@@ -1116,10 +1125,12 @@ export function Dashboard({ api }: DashboardProps) {
       const rateToIso = rateToLocal.toISOString();
       const rateFromKey = localDateKey(rateFromLocal);
 
-      const SVT_PRODUCT = 'VAR-22-11-01';
-      const region = regionLetter.replace('_', '');
-      const svtElecTariff = `E-1R-${SVT_PRODUCT}-${region}`;
-      const svtGasTariff = `G-1R-${SVT_PRODUCT}-${region}`;
+      // Find the VAR (Flexible) product family from the catalogue for chained
+      // rate comparison.  Falls back to the well-known VAR-22-11-01 if the
+      // catalogue hasn't loaded yet.
+      const varFamily = familyMapRef.current.get('VAR-') ?? [];
+      const varProduct = varFamily.find(p => !p.available_to) ?? varFamily[varFamily.length - 1] ?? null;
+      const SVT_PRODUCT = varProduct?.code ?? 'VAR-22-11-01';
 
       /** Convert raw API rate entries to sorted TrackerDayRate[].
        *  Tracker rates have valid_from at 23:00 UTC (= midnight BST/local).
@@ -1144,16 +1155,20 @@ export function Dashboard({ api }: DashboardProps) {
           .filter(r => r.date >= rateFromKey)
           .sort((a, b) => a.date.localeCompare(b.date));
 
-      /** Fetch rates + SVT rates + costs for one fuel */
+      /** Fetch rates + SVT rates + costs for one fuel.
+       *  Uses chained rate fetching for the Flexible product so that if its
+       *  rates don't cover the full comparison period (e.g. after a quarterly
+       *  product code change), the predecessor product's rates fill the gap. */
       const fetchFuelData = async (
         fuelType: 'electricity' | 'gas',
         trackerTariff: string,
-        svtTariff: string,
         consumption: ConsumptionResult[],
       ): Promise<TrackerFuelData> => {
         const [trackerRates, svtRatesRaw] = await Promise.all([
           api.fetchUnitRates(productCode, trackerTariff, fuelType, rateFromIso, rateToIso),
-          api.fetchUnitRates(SVT_PRODUCT, svtTariff, fuelType, rateFromIso, rateToIso),
+          varFamily.length > 0
+            ? api.fetchFamilyChainedRates(varFamily, regionLetter, fuelType, rateFromIso, rateToIso, 'unit', null)
+            : api.fetchUnitRates(SVT_PRODUCT, `${fuelType === 'electricity' ? 'E' : 'G'}-1R-${SVT_PRODUCT}-${regionLetter.replace('_', '')}`, fuelType, rateFromIso, rateToIso),
         ]);
 
         const rates = toTrackerRates(trackerRates);
@@ -1173,8 +1188,12 @@ export function Dashboard({ api }: DashboardProps) {
           const [tRates, tSC, sRates, sSC] = await Promise.all([
             api.fetchUnitRates(productCode, trackerTariff, fuelType, periodFrom, periodTo),
             api.fetchStandingCharges(productCode, trackerTariff, fuelType, periodFrom, periodTo),
-            api.fetchUnitRates(SVT_PRODUCT, svtTariff, fuelType, periodFrom, periodTo),
-            api.fetchStandingCharges(SVT_PRODUCT, svtTariff, fuelType, periodFrom, periodTo),
+            varFamily.length > 0
+              ? api.fetchFamilyChainedRates(varFamily, regionLetter, fuelType, periodFrom, periodTo, 'unit', null)
+              : api.fetchUnitRates(SVT_PRODUCT, `${fuelType === 'electricity' ? 'E' : 'G'}-1R-${SVT_PRODUCT}-${regionLetter.replace('_', '')}`, fuelType, periodFrom, periodTo),
+            varFamily.length > 0
+              ? api.fetchFamilyChainedRates(varFamily, regionLetter, fuelType, periodFrom, periodTo, 'standing', null)
+              : api.fetchStandingCharges(SVT_PRODUCT, `${fuelType === 'electricity' ? 'E' : 'G'}-1R-${SVT_PRODUCT}-${regionLetter.replace('_', '')}`, fuelType, periodFrom, periodTo),
           ]);
 
           trackerCost = CostEngine.calculateCost(consumption, tRates, tSC);
@@ -1186,9 +1205,9 @@ export function Dashboard({ api }: DashboardProps) {
 
       // Fetch electricity + gas (if available) + current Tracker version in parallel
       const [electricity, gasResult, currentTracker] = await Promise.all([
-        fetchFuelData('electricity', elecTariffCode, svtElecTariff, elecConsumption),
+        fetchFuelData('electricity', elecTariffCode, elecConsumption),
         gasTariffCode
-          ? fetchFuelData('gas', gasTariffCode, svtGasTariff, gasConsumption)
+          ? fetchFuelData('gas', gasTariffCode, gasConsumption)
           : Promise.resolve(null),
         api.findCurrentTrackerProduct(productCode, regionLetter, 'electricity'),
       ]);
@@ -1342,16 +1361,34 @@ export function Dashboard({ api }: DashboardProps) {
       }
     };
 
+    // Resolve the VAR (Flexible) product from the family map — used as the
+    // fallback for gaps in other families' timelines.
+    const varFamily = familyMapRef.current.get('VAR-');
+    const varProduct = varFamily?.find(p => !p.available_to) ?? varFamily?.[varFamily.length - 1] ?? null;
+
     const standardTasks = compatibleProducts.map(async product => {
-      // Export tariffs use E- prefix (they're electricity export unit rates)
-      const tariffCode = meter.fuelType === 'gas'
-        ? `G-1R-${product.code}-${regionChar}`
-        : `E-1R-${product.code}-${regionChar}`;
       try {
-        const [unitRates, standingCharges] = await Promise.all([
-          CostEngine.fetchTariffRates(api, product.code, tariffCode, meter.fuelType, periodFrom, periodTo),
-          CostEngine.fetchStandingCharges(api, product.code, tariffCode, meter.fuelType, periodFrom, periodTo),
-        ]);
+        // Look up the product's family from the catalogue for chained rate fetching
+        const prefix = productFamilyPrefix(product.code);
+        const family = familyMapRef.current.get(prefix);
+
+        let unitRates, standingCharges;
+        if (family && family.length > 0) {
+          // Use family-chained fetching — covers predecessor products automatically
+          [unitRates, standingCharges] = await Promise.all([
+            api.fetchFamilyChainedRates(family, bl.regionLetter, meter.fuelType, periodFrom, periodTo, 'unit', varProduct),
+            api.fetchFamilyChainedRates(family, bl.regionLetter, meter.fuelType, periodFrom, periodTo, 'standing', varProduct),
+          ]);
+        } else {
+          // Fallback: product not in catalogue (shouldn't happen, but be safe)
+          const tariffCode = meter.fuelType === 'gas'
+            ? `G-1R-${product.code}-${regionChar}`
+            : `E-1R-${product.code}-${regionChar}`;
+          [unitRates, standingCharges] = await Promise.all([
+            CostEngine.fetchTariffRates(api, product.code, tariffCode, meter.fuelType, periodFrom, periodTo),
+            CostEngine.fetchStandingCharges(api, product.code, tariffCode, meter.fuelType, periodFrom, periodTo),
+          ]);
+        }
         const result = CostEngine.calculateCost(consumption, unitRates, standingCharges);
         const fullDays = bl.current.periodDays || 1;
         const isPartial = (result.periodDays || 1) < fullDays - 1;
@@ -1363,6 +1400,8 @@ export function Dashboard({ api }: DashboardProps) {
       setCompletedCount(c => c + 1);
     });
 
+    // Extra products (e.g. live Tracker) — not in the public catalogue, so
+    // use direct rate fetching (no family chaining needed for Tracker)
     const extraTasks = extraProducts.map(async product => {
       try {
         const [unitRates, standingCharges] = await Promise.all([

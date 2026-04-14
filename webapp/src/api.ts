@@ -59,6 +59,10 @@ export interface Product {
   is_tracker: boolean;
   is_prepay: boolean;
   is_business: boolean;
+  /** ISO date when this product became available for sign-ups */
+  available_from: string;
+  /** ISO date when this product was superseded (null = still current) */
+  available_to: string | null;
   /** Populated after fetching product detail — undefined means not yet checked */
   has_electricity?: boolean;
   has_gas?: boolean;
@@ -76,6 +80,137 @@ export interface ConsumptionResponse {
   previous: string | null;
   results: ConsumptionResult[];
 }
+
+// ---------------------------------------------------------------------------
+// Product family grouping and timeline resolution
+// ---------------------------------------------------------------------------
+
+/** A segment in a product timeline: which product covers which date range. */
+export interface ProductSegment {
+  productCode: string;
+  from: string;  // ISO date
+  to: string;    // ISO date
+}
+
+/**
+ * Extract the family prefix from a product code.
+ * Most codes follow PREFIX-YY-MM-DD (e.g. "GO-FIX-12M-26-03-23" → "GO-FIX-12M-").
+ * Products without a date suffix are their own single-member family.
+ */
+export function productFamilyPrefix(code: string): string {
+  const m = code.match(/^(.+-)(\d{2}-\d{2}-\d{2})$/);
+  return m ? m[1] : code;
+}
+
+/**
+ * Group a list of products into families keyed by their code prefix.
+ * Within each family, products are sorted by `available_from` ascending (oldest first).
+ */
+export function groupProductFamilies(products: Product[]): Map<string, Product[]> {
+  const families = new Map<string, Product[]>();
+  for (const p of products) {
+    const prefix = productFamilyPrefix(p.code);
+    const list = families.get(prefix) ?? [];
+    list.push(p);
+    families.set(prefix, list);
+  }
+  // Sort each family oldest-first by available_from
+  for (const [, list] of families) {
+    list.sort((a, b) =>
+      new Date(a.available_from).getTime() - new Date(b.available_from).getTime()
+    );
+  }
+  return families;
+}
+
+/**
+ * Given a family's product list and a comparison period, return an ordered list
+ * of segments indicating which product's rates to use for each slice of time.
+ *
+ * For each date in the window the **latest** product whose `available_from <= date`
+ * and whose `available_to > date` (or is null) is chosen.  Gaps where no product
+ * in the family was available are filled with the VAR (Flexible) product.
+ */
+export function resolveProductTimeline(
+  familyProducts: Product[],
+  periodFrom: string,
+  periodTo: string,
+  varProduct: Product | null,
+): ProductSegment[] {
+  const from = new Date(periodFrom).getTime();
+  const to = new Date(periodTo).getTime();
+  if (from >= to) return [];
+
+  // Sort by available_from ascending so we can walk forward
+  const sorted = [...familyProducts].sort(
+    (a, b) => new Date(a.available_from).getTime() - new Date(b.available_from).getTime()
+  );
+
+  const segments: ProductSegment[] = [];
+  let cursor = from;
+
+  while (cursor < to) {
+    // Find the latest product that was available at `cursor`.
+    // Walk backward through sorted list to find the last product whose
+    // available_from <= cursor AND (available_to > cursor OR available_to is null).
+    let chosen: Product | null = null;
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      const p = sorted[i];
+      const pFrom = new Date(p.available_from).getTime();
+      const pTo = p.available_to ? new Date(p.available_to).getTime() : Infinity;
+      if (pFrom <= cursor && pTo > cursor) {
+        chosen = p;
+        break;
+      }
+    }
+
+    if (chosen) {
+      // This product is available from cursor until the earlier of:
+      // - the product's available_to
+      // - the next product's available_from (if it starts before available_to)
+      // - the period end
+      const chosenTo = chosen.available_to ? new Date(chosen.available_to).getTime() : Infinity;
+      // Check if a newer product starts before this one ends
+      let segEnd = Math.min(chosenTo, to);
+      for (const p of sorted) {
+        const pFrom = new Date(p.available_from).getTime();
+        if (pFrom > cursor && pFrom < segEnd) {
+          segEnd = pFrom;
+        }
+      }
+      segments.push({
+        productCode: chosen.code,
+        from: new Date(cursor).toISOString(),
+        to: new Date(segEnd).toISOString(),
+      });
+      cursor = segEnd;
+    } else {
+      // Gap — no product in this family available at cursor.
+      // Fill with VAR (Flexible) until the next family product starts.
+      let nextStart = to;
+      for (const p of sorted) {
+        const pFrom = new Date(p.available_from).getTime();
+        if (pFrom > cursor && pFrom < nextStart) {
+          nextStart = pFrom;
+        }
+      }
+      if (varProduct) {
+        segments.push({
+          productCode: varProduct.code,
+          from: new Date(cursor).toISOString(),
+          to: new Date(nextStart).toISOString(),
+        });
+      }
+      cursor = nextStart;
+    }
+  }
+
+  return segments;
+}
+
+// ---------------------------------------------------------------------------
+// API client
+// ---------------------------------------------------------------------------
 
 export class OctopusApi {
   private apiKey: string;
@@ -345,6 +480,93 @@ export class OctopusApi {
     }
 
     return null;
+  }
+
+  /**
+   * Fetch the full product catalogue covering the last 12+ months.
+   *
+   * Makes parallel `available_at` queries at quarterly intervals so we discover
+   * predecessor products that are no longer current.  Results are deduped by
+   * product code and include `available_from` / `available_to` for timeline
+   * resolution.
+   */
+  async getProductCatalogue(): Promise<Product[]> {
+    const now = new Date();
+    const dates: string[] = [];
+    for (let q = 0; q < 5; q++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - q * 3, now.getDate());
+      dates.push(d.toISOString());
+    }
+
+    const pages = await Promise.all(
+      dates.map(d => {
+        const url = `${BASE_URL}/products/?is_business=false&available_at=${d}&page_size=100`;
+        return this.fetchAllPages<Product>(url).catch(() => [] as Product[]);
+      })
+    );
+
+    // Dedup by product code — keep the first occurrence (most recent query wins)
+    const seen = new Map<string, Product>();
+    for (const page of pages) {
+      for (const p of page) {
+        if (!seen.has(p.code)) seen.set(p.code, p);
+      }
+    }
+    return Array.from(seen.values());
+  }
+
+  /**
+   * Fetch unit rates (or standing charges) for a product family over a period,
+   * chaining through predecessor products so the full period is covered.
+   *
+   * For each date in the window, uses the latest product in the family that was
+   * available at that date.  Gaps where no product in the family existed are
+   * filled with VAR (Flexible) rates — the default tariff between product versions.
+   */
+  async fetchFamilyChainedRates(
+    familyProducts: Product[],
+    regionLetter: string,
+    fuelType: 'electricity' | 'gas',
+    periodFrom: string,
+    periodTo: string,
+    rateType: 'unit' | 'standing',
+    varProduct: Product | null,
+  ): Promise<{ value_inc_vat: number; valid_from: string; valid_to: string | null; payment_method: string | null }[]> {
+    const segments = resolveProductTimeline(familyProducts, periodFrom, periodTo, varProduct);
+    if (segments.length === 0) return [];
+
+    const region = regionLetter.replace('_', '');
+    const fuelPrefix = fuelType === 'electricity' ? 'E' : 'G';
+    const fetcher = rateType === 'unit'
+      ? this.fetchUnitRates.bind(this)
+      : this.fetchStandingCharges.bind(this);
+
+    // Fetch rates for each segment in parallel
+    const segmentRates = await Promise.all(
+      segments.map(async seg => {
+        const tariffCode = `${fuelPrefix}-1R-${seg.productCode}-${region}`;
+        try {
+          const rates = await fetcher(seg.productCode, tariffCode, fuelType, seg.from, seg.to);
+          // Clip rate boundaries to the segment to prevent overlap between segments
+          return rates.map(r => ({
+            ...r,
+            valid_from: r.valid_from && new Date(r.valid_from).getTime() < new Date(seg.from).getTime()
+              ? seg.from
+              : r.valid_from,
+            valid_to: r.valid_to && new Date(r.valid_to).getTime() > new Date(seg.to).getTime()
+              ? seg.to
+              : r.valid_to,
+          }));
+        } catch {
+          return [];
+        }
+      })
+    );
+
+    // Merge and sort oldest-first
+    return segmentRates
+      .flat()
+      .sort((a, b) => new Date(a.valid_from).getTime() - new Date(b.valid_from).getTime());
   }
 
   /**
