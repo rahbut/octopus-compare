@@ -169,7 +169,13 @@ function getActiveAgreement(agreements: Agreement[] | undefined): Agreement | nu
   const sorted = [...agreements].sort(
     (a, b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime()
   );
-  return sorted.find(ag => !ag.valid_to || new Date(ag.valid_to) > now) ?? sorted[0];
+  // Find the most-recent agreement that has already started AND has not yet ended.
+  // Excluding future agreements (valid_from > now) prevents a pre-provisioned
+  // upcoming agreement from being mistakenly treated as the current one.
+  return (
+    sorted.find(ag => new Date(ag.valid_from) <= now && (!ag.valid_to || new Date(ag.valid_to) > now)) ??
+    sorted[0]
+  );
 }
 
 function productCodeFromTariffCode(tariffCode: string): string {
