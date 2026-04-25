@@ -178,6 +178,79 @@ function getActiveAgreement(agreements: Agreement[] | undefined): Agreement | nu
   );
 }
 
+/**
+ * Returns all agreements that overlap a date range, sorted oldest-first,
+ * with each agreement's effective period clamped to the given bounds.
+ */
+function getOverlappingAgreements(
+  agreements: Agreement[] | undefined,
+  periodFrom: string,
+  periodTo: string,
+): { agreement: Agreement; clampedFrom: string; clampedTo: string }[] {
+  if (!agreements?.length) return [];
+  const fromMs = new Date(periodFrom).getTime();
+  const toMs = new Date(periodTo).getTime();
+
+  return agreements
+    .filter(ag => {
+      const agFrom = new Date(ag.valid_from).getTime();
+      const agTo = ag.valid_to ? new Date(ag.valid_to).getTime() : Infinity;
+      return agFrom < toMs && agTo > fromMs;
+    })
+    .sort((a, b) => new Date(a.valid_from).getTime() - new Date(b.valid_from).getTime())
+    .map(ag => {
+      const agFrom = new Date(ag.valid_from).getTime();
+      const agTo = ag.valid_to ? new Date(ag.valid_to).getTime() : Infinity;
+      return {
+        agreement: ag,
+        clampedFrom: new Date(Math.max(agFrom, fromMs)).toISOString(),
+        clampedTo: agTo === Infinity ? periodTo : new Date(Math.min(agTo, toMs)).toISOString(),
+      };
+    });
+}
+
+/**
+ * Fetch and combine unit rates or standing charges from multiple overlapping
+ * agreements for a period, clipping rate boundaries at agreement transitions
+ * so there are no overlaps.  Follows the same clip-and-merge pattern used by
+ * fetchFamilyChainedRates in api.ts.
+ */
+async function fetchCombinedAgreementRates(
+  api: OctopusApi,
+  agreements: Agreement[] | undefined,
+  fuelType: 'electricity' | 'gas',
+  periodFrom: string,
+  periodTo: string,
+  rateType: 'unit' | 'standing',
+): Promise<{ value_inc_vat: number; valid_from: string; valid_to: string | null; payment_method: string | null }[]> {
+  const overlapping = getOverlappingAgreements(agreements, periodFrom, periodTo);
+  if (overlapping.length === 0) return [];
+
+  const segmentRates = await Promise.all(
+    overlapping.map(async ({ agreement, clampedFrom, clampedTo }) => {
+      const productCode = productCodeFromTariffCode(agreement.tariff_code);
+      try {
+        const rates = rateType === 'unit'
+          ? await api.fetchUnitRates(productCode, agreement.tariff_code, fuelType, clampedFrom, clampedTo)
+          : await api.fetchStandingCharges(productCode, agreement.tariff_code, fuelType, clampedFrom, clampedTo);
+        return rates.map(r => ({
+          ...r,
+          valid_from: r.valid_from && new Date(r.valid_from).getTime() < new Date(clampedFrom).getTime()
+            ? clampedFrom : r.valid_from,
+          valid_to: r.valid_to && new Date(r.valid_to).getTime() > new Date(clampedTo).getTime()
+            ? clampedTo : r.valid_to,
+        }));
+      } catch {
+        return [];
+      }
+    })
+  );
+
+  return segmentRates
+    .flat()
+    .sort((a, b) => new Date(a.valid_from).getTime() - new Date(b.valid_from).getTime());
+}
+
 function productCodeFromTariffCode(tariffCode: string): string {
   // Pattern: {E|G}-{1R|2R}-{PRODUCT_CODE}-{REGION}
   const parts = tariffCode.split('-');
@@ -969,22 +1042,19 @@ export function Dashboard({ api }: DashboardProps) {
             : api.getGasConsumption(meter.id, meter.activeSerial, priorFrom.toISOString(), priorTo.toISOString()),
         ]);
 
-        // Compute costs using current tariff
-        const agreement = getActiveAgreement(meter.point.agreements);
+        // Compute costs using historical agreements for each portion of the period
         let currentCost: CostCalculation | null = null;
         let priorCost: CostCalculation | null = null;
 
-        if (agreement && currentData.length > 0) {
-          const tariffCode = agreement.tariff_code;
-          const productCode = productCodeFromTariffCode(tariffCode);
+        if (meter.point.agreements?.length && currentData.length > 0) {
           const sortedCurrent = [...currentData].sort((a, b) => new Date(a.interval_start).getTime() - new Date(b.interval_start).getTime());
           const periodFrom = toUtcIso(sortedCurrent[0].interval_start);
           const periodTo = toUtcIso(sortedCurrent[sortedCurrent.length - 1].interval_end);
 
           try {
             const [unitRates, standingCharges] = await Promise.all([
-              CostEngine.fetchTariffRates(api, productCode, tariffCode, meter.fuelType, periodFrom, periodTo),
-              CostEngine.fetchStandingCharges(api, productCode, tariffCode, meter.fuelType, periodFrom, periodTo),
+              fetchCombinedAgreementRates(api, meter.point.agreements, meter.fuelType, periodFrom, periodTo, 'unit'),
+              fetchCombinedAgreementRates(api, meter.point.agreements, meter.fuelType, periodFrom, periodTo, 'standing'),
             ]);
             currentCost = CostEngine.calculateCost(currentData, unitRates, standingCharges);
           } catch {
@@ -992,26 +1062,15 @@ export function Dashboard({ api }: DashboardProps) {
           }
         }
 
-        if (agreement && priorData.length > 0) {
-          // For the prior period, find the agreement that was active then
+        if (meter.point.agreements?.length && priorData.length > 0) {
           const priorSortedData = [...priorData].sort((a, b) => new Date(a.interval_start).getTime() - new Date(b.interval_start).getTime());
           const priorPeriodFrom = toUtcIso(priorSortedData[0].interval_start);
           const priorPeriodTo = toUtcIso(priorSortedData[priorSortedData.length - 1].interval_end);
 
-          // Find agreement active during the prior period
-          const midPoint = new Date((new Date(priorPeriodFrom).getTime() + new Date(priorPeriodTo).getTime()) / 2);
-          const priorAgreement = meter.point.agreements?.find(ag => {
-            const from = new Date(ag.valid_from);
-            const to = ag.valid_to ? new Date(ag.valid_to) : new Date('2099-01-01');
-            return midPoint >= from && midPoint < to;
-          }) ?? agreement;
-
-          const priorProductCode = productCodeFromTariffCode(priorAgreement.tariff_code);
-
           try {
             const [priorUnitRates, priorStandingCharges] = await Promise.all([
-              CostEngine.fetchTariffRates(api, priorProductCode, priorAgreement.tariff_code, meter.fuelType, priorPeriodFrom, priorPeriodTo),
-              CostEngine.fetchStandingCharges(api, priorProductCode, priorAgreement.tariff_code, meter.fuelType, priorPeriodFrom, priorPeriodTo),
+              fetchCombinedAgreementRates(api, meter.point.agreements, meter.fuelType, priorPeriodFrom, priorPeriodTo, 'unit'),
+              fetchCombinedAgreementRates(api, meter.point.agreements, meter.fuelType, priorPeriodFrom, priorPeriodTo, 'standing'),
             ]);
             priorCost = CostEngine.calculateCost(priorData, priorUnitRates, priorStandingCharges);
           } catch {
@@ -1031,8 +1090,8 @@ export function Dashboard({ api }: DashboardProps) {
 
             try {
               const [unitRates, standingCharges] = await Promise.all([
-                CostEngine.fetchTariffRates(api, productCode, tariffCode, meter.fuelType, periodFrom, periodTo),
-                CostEngine.fetchStandingCharges(api, productCode, tariffCode, meter.fuelType, periodFrom, periodTo),
+                fetchCombinedAgreementRates(api, meter.point.agreements, meter.fuelType, periodFrom, periodTo, 'unit'),
+                fetchCombinedAgreementRates(api, meter.point.agreements, meter.fuelType, periodFrom, periodTo, 'standing'),
               ]);
               const current = CostEngine.calculateCost(currentData, unitRates, standingCharges);
               // No Ofgem cap for export meters
@@ -1105,13 +1164,12 @@ export function Dashboard({ api }: DashboardProps) {
   // -----------------------------------------------------------------------
 
   const fetchTrackerData = useCallback(async (
-    elecTariffCode: string,
-    productCode: string,
+    elecAgreements: Agreement[],
     regionLetter: string,
     tf: Timeframe,
     elecConsumption: ConsumptionResult[],
     gasConsumption: ConsumptionResult[],
-    gasTariffCode: string | null,
+    gasAgreements: Agreement[] | null,
   ) => {
     setTrackerData(prev => ({
       ...(prev ?? {
@@ -1137,6 +1195,12 @@ export function Dashboard({ api }: DashboardProps) {
       const varFamily = familyMapRef.current.get('VAR-') ?? [];
       const varProduct = varFamily.find(p => !p.available_to) ?? varFamily[varFamily.length - 1] ?? null;
       const SVT_PRODUCT = varProduct?.code ?? 'VAR-22-11-01';
+
+      // Derive the active product code from the latest electricity agreement
+      const activeElecAgreement = getActiveAgreement(elecAgreements);
+      const activeProductCode = activeElecAgreement
+        ? productCodeFromTariffCode(activeElecAgreement.tariff_code)
+        : '';
 
       /** Convert raw API rate entries to sorted TrackerDayRate[].
        *  Tracker rates have valid_from at 23:00 UTC (= midnight BST/local).
@@ -1167,11 +1231,11 @@ export function Dashboard({ api }: DashboardProps) {
        *  product code change), the predecessor product's rates fill the gap. */
       const fetchFuelData = async (
         fuelType: 'electricity' | 'gas',
-        trackerTariff: string,
+        agreements: Agreement[],
         consumption: ConsumptionResult[],
       ): Promise<TrackerFuelData> => {
         const [trackerRates, svtRatesRaw] = await Promise.all([
-          api.fetchUnitRates(productCode, trackerTariff, fuelType, rateFromIso, rateToIso),
+          fetchCombinedAgreementRates(api, agreements, fuelType, rateFromIso, rateToIso, 'unit'),
           varFamily.length > 0
             ? api.fetchFamilyChainedRates(varFamily, regionLetter, fuelType, rateFromIso, rateToIso, 'unit', null)
             : api.fetchUnitRates(SVT_PRODUCT, `${fuelType === 'electricity' ? 'E' : 'G'}-1R-${SVT_PRODUCT}-${regionLetter.replace('_', '')}`, fuelType, rateFromIso, rateToIso),
@@ -1192,8 +1256,8 @@ export function Dashboard({ api }: DashboardProps) {
           const periodTo = toUtcIso(sorted[sorted.length - 1].interval_end);
 
           const [tRates, tSC, sRates, sSC] = await Promise.all([
-            api.fetchUnitRates(productCode, trackerTariff, fuelType, periodFrom, periodTo),
-            api.fetchStandingCharges(productCode, trackerTariff, fuelType, periodFrom, periodTo),
+            fetchCombinedAgreementRates(api, agreements, fuelType, periodFrom, periodTo, 'unit'),
+            fetchCombinedAgreementRates(api, agreements, fuelType, periodFrom, periodTo, 'standing'),
             varFamily.length > 0
               ? api.fetchFamilyChainedRates(varFamily, regionLetter, fuelType, periodFrom, periodTo, 'unit', null)
               : api.fetchUnitRates(SVT_PRODUCT, `${fuelType === 'electricity' ? 'E' : 'G'}-1R-${SVT_PRODUCT}-${regionLetter.replace('_', '')}`, fuelType, periodFrom, periodTo),
@@ -1211,11 +1275,11 @@ export function Dashboard({ api }: DashboardProps) {
 
       // Fetch electricity + gas (if available) + current Tracker version in parallel
       const [electricity, gasResult, currentTracker] = await Promise.all([
-        fetchFuelData('electricity', elecTariffCode, elecConsumption),
-        gasTariffCode
-          ? fetchFuelData('gas', gasTariffCode, gasConsumption)
+        fetchFuelData('electricity', elecAgreements, elecConsumption),
+        gasAgreements
+          ? fetchFuelData('gas', gasAgreements, gasConsumption)
           : Promise.resolve(null),
-        api.findCurrentTrackerProduct(productCode, regionLetter, 'electricity'),
+        api.findCurrentTrackerProduct(activeProductCode, regionLetter, 'electricity'),
       ]);
 
       setTrackerData({
@@ -1268,12 +1332,10 @@ export function Dashboard({ api }: DashboardProps) {
     if (!elecData || elecData.current.length === 0) return;
 
     const gasMeter = meters.find(m => m.fuelType === 'gas' && !m.isExport);
-    const gasAgreement = gasMeter ? getActiveAgreement(gasMeter.point.agreements) : null;
-    const gasProductCode = gasAgreement ? productCodeFromTariffCode(gasAgreement.tariff_code) : null;
-    const gasTariffCode = gasProductCode === productCode
-      ? `G-1R-${productCode}-${gasMeter ? regionLetterFromMeters() : 'A'}`
-      : null;
-    const gasMeterData = gasTariffCode && gasMeter ? meterData[gasMeter.id] : null;
+    const gasHasTracker = gasMeter?.point.agreements?.some(ag =>
+      isTrackerProductCode(productCodeFromTariffCode(ag.tariff_code))
+    ) ?? false;
+    const gasMeterData = gasHasTracker && gasMeter ? meterData[gasMeter.id] : null;
 
     // Build a stable key: timeframe + elec data length + gas data length
     // This ensures we only re-fetch when the actual data has changed, not on unrelated meterData updates
@@ -1286,20 +1348,13 @@ export function Dashboard({ api }: DashboardProps) {
     const regionLetter = mpan ? getGspFromMpan(mpan) : '_A';
 
     fetchTrackerData(
-      elecAgreement.tariff_code,
-      productCode,
+      importElec.point.agreements ?? [],
       regionLetter,
       timeframe,
       elecData.current,
       gasMeterData?.current ?? [],
-      gasTariffCode,
+      gasHasTracker ? (gasMeter!.point.agreements ?? null) : null,
     );
-
-    function regionLetterFromMeters() {
-      const property = account?.properties[0];
-      const mpan = property?.electricity_meter_points?.find(m => !m.is_export)?.mpan ?? '';
-      return mpan ? getGspFromMpan(mpan).replace('_', '') : 'A';
-    }
   }, [meterData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // -----------------------------------------------------------------------
@@ -1358,8 +1413,8 @@ export function Dashboard({ api }: DashboardProps) {
       if (!coveredSlots.length) return null;
       try {
         const [curRates, curSC] = await Promise.all([
-          CostEngine.fetchTariffRates(api, bl.productCode, bl.tariffCode, meter.fuelType, altCalc.coveredFrom, altCalc.coveredTo),
-          CostEngine.fetchStandingCharges(api, bl.productCode, bl.tariffCode, meter.fuelType, altCalc.coveredFrom, altCalc.coveredTo),
+          fetchCombinedAgreementRates(api, meter.point.agreements, meter.fuelType, altCalc.coveredFrom, altCalc.coveredTo, 'unit'),
+          fetchCombinedAgreementRates(api, meter.point.agreements, meter.fuelType, altCalc.coveredFrom, altCalc.coveredTo, 'standing'),
         ]);
         return CostEngine.calculateCost(coveredSlots, curRates, curSC);
       } catch {
@@ -1489,11 +1544,15 @@ export function Dashboard({ api }: DashboardProps) {
   }, [compareIsExport, compareFuelType, products, exportProducts, liveTrackerProduct]);
 
   const sortedCompareRows = useMemo(() => {
-    const rows = activeProductList.map(p => ({
-      code: p.code,
-      name: p.full_name,
-      altResult: altResults[p.code] as AltResult | null | undefined,
-    }));
+    // Exclude the user's current tariff — it's already shown as the pinned "current" row
+    const currentProductCode = baselines[compareMeterId]?.productCode;
+    const rows = activeProductList
+      .filter(p => p.code !== currentProductCode)
+      .map(p => ({
+        code: p.code,
+        name: p.full_name,
+        altResult: altResults[p.code] as AltResult | null | undefined,
+      }));
     return rows.sort((a, b) => {
       const aA = a.altResult, bA = b.altResult;
       if (!aA && !bA) return 0;
