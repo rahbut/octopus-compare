@@ -6,13 +6,14 @@ import { OctopusApi } from './api';
 function App() {
   const savedApiKey = localStorage.getItem('octopus_api_key');
   const savedAccountNum = localStorage.getItem('octopus_account_num');
+  const savedGasCF = localStorage.getItem('octopus_gas_conversion_factor');
   const initialCredentials = savedApiKey && savedAccountNum
     ? { apiKey: savedApiKey, accountNum: savedAccountNum }
     : null;
 
   const [credentials, setCredentials] = useState<{ apiKey: string; accountNum: string } | null>(initialCredentials);
   const [api, setApi] = useState<OctopusApi | null>(
-    initialCredentials ? new OctopusApi(initialCredentials.apiKey, initialCredentials.accountNum) : null
+    initialCredentials ? new OctopusApi(initialCredentials.apiKey, initialCredentials.accountNum, savedGasCF ? parseFloat(savedGasCF) : undefined) : null
   );
   const [theme, setTheme] = useState<'light' | 'dark'>(
     window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
@@ -22,9 +23,9 @@ function App() {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
-  const handleLogin = (apiKey: string, accountNum: string) => {
+  const handleLogin = (apiKey: string, accountNum: string, gasConversionFactor: number) => {
     setCredentials({ apiKey, accountNum });
-    setApi(new OctopusApi(apiKey, accountNum));
+    setApi(new OctopusApi(apiKey, accountNum, gasConversionFactor));
   };
 
   const handleLogout = () => {
@@ -32,6 +33,7 @@ function App() {
     setApi(null);
     localStorage.removeItem('octopus_api_key');
     localStorage.removeItem('octopus_account_num');
+    localStorage.removeItem('octopus_gas_conversion_factor');
   };
 
   const toggleTheme = () => {

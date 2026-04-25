@@ -13,6 +13,7 @@ import {
 import {
   CostEngine,
   type CostCalculation,
+  type Rate,
   getGspFromMpan,
   calculateOfgemCapCost,
 } from './CostEngine';
@@ -60,6 +61,10 @@ interface MeterData {
   latestDate: Date | null;
   currentCost: CostCalculation | null;
   priorCost: CostCalculation | null;
+  currentUnitRates: Rate[];
+  currentStandingRates: Rate[];
+  priorUnitRates: Rate[];
+  priorStandingRates: Rate[];
   loading: boolean;
   error: string | null;
 }
@@ -347,6 +352,66 @@ function mergePeriodsForChart(
     [currentLabel]: c.kWh,
     [priorLabel]: prior[i]?.kWh ?? null,
   }));
+}
+
+/** Compute cost (pence) per aggregated period (day or month) from consumption + rates.
+ *  Returns a map from dateKey → total cost in pence (unit + standing). */
+function computePeriodCosts(
+  consumption: ConsumptionResult[],
+  unitRates: Rate[],
+  standingRates: Rate[],
+  monthly: boolean,
+): Record<string, number> {
+  if (!unitRates.length) return {};
+
+  const parsedUR = unitRates.map(r => ({
+    start: r.valid_from ? new Date(r.valid_from).getTime() : 0,
+    end: r.valid_to ? new Date(r.valid_to).getTime() : Infinity,
+    value: r.value_inc_vat,
+  }));
+  const fallbackUR = unitRates[0]?.value_inc_vat ?? 0;
+
+  const parsedSC = standingRates.map(r => ({
+    start: r.valid_from ? new Date(r.valid_from).getTime() : 0,
+    end: r.valid_to ? new Date(r.valid_to).getTime() : Infinity,
+    value: r.value_inc_vat,
+  }));
+  const fallbackSC = standingRates[0]?.value_inc_vat ?? 0;
+
+  const buckets: Record<string, { unitPence: number; days: Set<string> }> = {};
+
+  for (const item of consumption) {
+    const d = new Date(item.interval_start);
+    const key = monthly
+      ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      : localDateKey(d);
+    if (!buckets[key]) buckets[key] = { unitPence: 0, days: new Set() };
+    buckets[key].days.add(localDateKey(d));
+
+    const ts = d.getTime();
+    let rate = fallbackUR;
+    for (const r of parsedUR) {
+      if (ts >= r.start && ts < r.end) { rate = r.value; break; }
+    }
+    buckets[key].unitPence += item.consumption * rate;
+  }
+
+  const result: Record<string, number> = {};
+  for (const [key, bucket] of Object.entries(buckets)) {
+    let sc = 0;
+    if (parsedSC.length) {
+      for (const dayKey of bucket.days) {
+        const dayTs = new Date(dayKey + 'T12:00:00').getTime();
+        let scRate = fallbackSC;
+        for (const r of parsedSC) {
+          if (dayTs >= r.start && dayTs < r.end) { scRate = r.value; break; }
+        }
+        sc += scRate;
+      }
+    }
+    result[key] = bucket.unitPence + sc;
+  }
+  return result;
 }
 
 function timeframeDays(tf: Timeframe): number {
@@ -696,7 +761,8 @@ const MeterPanel = React.memo(function MeterPanel({
   data: MeterData;
   timeframe: Timeframe;
 }) {
-  const { meter, current, prior, currentCost, priorCost, loading, error } = data;
+  const { meter, current, prior, currentCost, priorCost, loading, error,
+    currentUnitRates, currentStandingRates, priorUnitRates, priorStandingRates } = data;
   const useMonthly = timeframe === '1year';
 
   const maxDays = timeframe === '7days' ? 7 : timeframe === '30days' ? 30 : undefined;
@@ -709,9 +775,22 @@ const MeterPanel = React.memo(function MeterPanel({
     [prior, useMonthly, maxDays]
   );
 
+  const currentCosts = useMemo(
+    () => computePeriodCosts(current, currentUnitRates, currentStandingRates, useMonthly),
+    [current, currentUnitRates, currentStandingRates, useMonthly]
+  );
+  const priorCosts = useMemo(
+    () => computePeriodCosts(prior, priorUnitRates, priorStandingRates, useMonthly),
+    [prior, priorUnitRates, priorStandingRates, useMonthly]
+  );
+
   const chartData = useMemo(
-    () => mergePeriodsForChart(currentAgg, priorAgg, 'current', 'prior'),
-    [currentAgg, priorAgg]
+    () => mergePeriodsForChart(currentAgg, priorAgg, 'current', 'prior').map(d => ({
+      ...d,
+      currentCost: currentCosts[d.dateKey] ?? null,
+      priorCost: priorCosts[d.dateKey] ?? null,
+    })),
+    [currentAgg, priorAgg, currentCosts, priorCosts]
   );
 
   const currentKwh = useMemo(() => current.reduce((s, r) => s + r.consumption, 0), [current]);
@@ -826,7 +905,31 @@ const MeterPanel = React.memo(function MeterPanel({
                 <YAxis stroke="var(--text-secondary)" tick={{ fontSize: 11 }} unit=" kWh" width={60} />
                 <Tooltip
                   cursor={{ fill: 'rgba(255,255,255,0.04)' }}
-                  contentStyle={{ backgroundColor: 'var(--bg-panel)', borderColor: 'var(--border-color)', color: 'var(--text-primary)', borderRadius: '8px', fontSize: '0.85rem' }}
+                  content={({ active, payload }) => {
+                    if (!active || !payload?.length) return null;
+                    const d = payload[0]?.payload as Record<string, unknown> | undefined;
+                    if (!d) return null;
+                    const curKwh = d.current as number | null;
+                    const prKwh = d.prior as number | null;
+                    const curCost = d.currentCost as number | null;
+                    const prCost = d.priorCost as number | null;
+                    return (
+                      <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '0.5rem 0.75rem', fontSize: '0.85rem' }}>
+                        <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>{d.date as string}</div>
+                        {curKwh != null && (
+                          <div style={{ color: 'var(--accent-color)' }}>
+                            {curKwh.toFixed(1)} kWh{curCost != null && <span style={{ marginLeft: '0.5rem', color: 'var(--text-primary)' }}>{penceToGBP(curCost)}</span>}
+                          </div>
+                        )}
+                        {prKwh != null && prKwh > 0 && (
+                          <div style={{ color: 'var(--chart-prior, rgba(255,255,255,0.25))' }}>
+                            {prKwh.toFixed(1)} kWh{prCost != null && <span style={{ marginLeft: '0.5rem' }}>{penceToGBP(prCost)}</span>}
+                            <span style={{ marginLeft: '0.3rem', fontSize: '0.78rem', opacity: 0.7 }}>(prior)</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }}
                 />
                 {hasPrior && <Legend wrapperStyle={{ fontSize: '0.8rem' }} />}
                 <Bar dataKey="current" name={timeframeLabel(timeframe)} fill="var(--chart-current)" radius={[3, 3, 0, 0]} />
@@ -1000,7 +1103,10 @@ export function Dashboard({ api }: DashboardProps) {
         ...prev,
         [meter.id]: {
           meter, current: [], prior: [], latestDate: null,
-          currentCost: null, priorCost: null, loading: true, error: null,
+          currentCost: null, priorCost: null,
+          currentUnitRates: [], currentStandingRates: [],
+          priorUnitRates: [], priorStandingRates: [],
+          loading: true, error: null,
         },
       }));
 
@@ -1045,6 +1151,10 @@ export function Dashboard({ api }: DashboardProps) {
         // Compute costs using historical agreements for each portion of the period
         let currentCost: CostCalculation | null = null;
         let priorCost: CostCalculation | null = null;
+        let curUnitRates: Rate[] = [];
+        let curStandingRates: Rate[] = [];
+        let prUnitRates: Rate[] = [];
+        let prStandingRates: Rate[] = [];
 
         if (meter.point.agreements?.length && currentData.length > 0) {
           const sortedCurrent = [...currentData].sort((a, b) => new Date(a.interval_start).getTime() - new Date(b.interval_start).getTime());
@@ -1052,11 +1162,11 @@ export function Dashboard({ api }: DashboardProps) {
           const periodTo = toUtcIso(sortedCurrent[sortedCurrent.length - 1].interval_end);
 
           try {
-            const [unitRates, standingCharges] = await Promise.all([
+            [curUnitRates, curStandingRates] = await Promise.all([
               fetchCombinedAgreementRates(api, meter.point.agreements, meter.fuelType, periodFrom, periodTo, 'unit'),
               fetchCombinedAgreementRates(api, meter.point.agreements, meter.fuelType, periodFrom, periodTo, 'standing'),
             ]);
-            currentCost = CostEngine.calculateCost(currentData, unitRates, standingCharges);
+            currentCost = CostEngine.calculateCost(currentData, curUnitRates, curStandingRates);
           } catch {
             // Cost calculation failed — show usage data without cost
           }
@@ -1068,11 +1178,11 @@ export function Dashboard({ api }: DashboardProps) {
           const priorPeriodTo = toUtcIso(priorSortedData[priorSortedData.length - 1].interval_end);
 
           try {
-            const [priorUnitRates, priorStandingCharges] = await Promise.all([
+            [prUnitRates, prStandingRates] = await Promise.all([
               fetchCombinedAgreementRates(api, meter.point.agreements, meter.fuelType, priorPeriodFrom, priorPeriodTo, 'unit'),
               fetchCombinedAgreementRates(api, meter.point.agreements, meter.fuelType, priorPeriodFrom, priorPeriodTo, 'standing'),
             ]);
-            priorCost = CostEngine.calculateCost(priorData, priorUnitRates, priorStandingCharges);
+            priorCost = CostEngine.calculateCost(priorData, prUnitRates, prStandingRates);
           } catch {
             // Prior cost unavailable
           }
@@ -1117,7 +1227,10 @@ export function Dashboard({ api }: DashboardProps) {
           ...prev,
           [meter.id]: {
             meter, current: currentData, prior: priorData,
-            latestDate, currentCost, priorCost, loading: false, error: null,
+            latestDate, currentCost, priorCost,
+            currentUnitRates: curUnitRates, currentStandingRates: curStandingRates,
+            priorUnitRates: prUnitRates, priorStandingRates: prStandingRates,
+            loading: false, error: null,
           },
         }));
       } catch (err: unknown) {
@@ -1142,7 +1255,10 @@ export function Dashboard({ api }: DashboardProps) {
     setMeterData(
       Object.fromEntries(meters.map(m => [m.id, {
         meter: m, current: [], prior: [], latestDate: null,
-        currentCost: null, priorCost: null, loading: true, error: null,
+        currentCost: null, priorCost: null,
+        currentUnitRates: [], currentStandingRates: [],
+        priorUnitRates: [], priorStandingRates: [],
+        loading: true, error: null,
       }]))
     );
     fetchAllMeters(meters, timeframe, account);

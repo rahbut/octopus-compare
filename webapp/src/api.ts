@@ -1,5 +1,10 @@
 const BASE_URL = 'https://api.octopus.energy/v1';
 
+/** Default UK gas m³→kWh conversion factor.  The exact value varies by region
+ *  and month (volume correction 1.02264 × calorific value ÷ 3.6).  11.1 is a
+ *  good UK-wide default — real calorific values typically sit around 39.1–39.3. */
+export const DEFAULT_GAS_CONVERSION_FACTOR = 11.1;
+
 /**
  * Convert any date string or Date to a UTC ISO-8601 string (ending in Z).
  * The Octopus API rejects period parameters with timezone offsets (+01:00 etc).
@@ -69,7 +74,7 @@ export interface Product {
 }
 
 export interface ConsumptionResult {
-  consumption: number; // kWh (or m³ for SMETS1 gas)
+  consumption: number; // kWh (gas is converted from m³ by getGasConsumption)
   interval_start: string;
   interval_end: string;
 }
@@ -215,10 +220,13 @@ export function resolveProductTimeline(
 export class OctopusApi {
   private apiKey: string;
   private accountNum: string;
+  /** User-configurable gas m³→kWh conversion factor */
+  gasConversionFactor: number;
 
-  constructor(apiKey: string, accountNum: string) {
+  constructor(apiKey: string, accountNum: string, gasConversionFactor?: number) {
     this.apiKey = apiKey;
     this.accountNum = accountNum;
+    this.gasConversionFactor = gasConversionFactor ?? DEFAULT_GAS_CONVERSION_FACTOR;
   }
 
   private get headers() {
@@ -371,7 +379,11 @@ export class OctopusApi {
 
   async getGasConsumption(mprn: string, serial: string, periodFrom: string, periodTo: string) {
     const url = `${BASE_URL}/gas-meter-points/${mprn}/meters/${serial}/consumption/?period_from=${periodFrom}&period_to=${periodTo}&page_size=1500`;
-    return this.fetchAllPages<ConsumptionResult>(url);
+    const raw = await this.fetchAllPages<ConsumptionResult>(url);
+    // Octopus REST API returns gas consumption in m³ — convert to kWh using
+    // the standard UK formula: m³ × volume correction (1.02264) × calorific
+    // value (approx 39.5 MJ/m³) ÷ 3.6
+    return raw.map(r => ({ ...r, consumption: r.consumption * this.gasConversionFactor }));
   }
 
   /**
