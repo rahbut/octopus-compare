@@ -238,12 +238,21 @@ async function fetchCombinedAgreementRates(
         const rates = rateType === 'unit'
           ? await api.fetchUnitRates(productCode, agreement.tariff_code, fuelType, clampedFrom, clampedTo)
           : await api.fetchStandingCharges(productCode, agreement.tariff_code, fuelType, clampedFrom, clampedTo);
+        // Clip every rate to this agreement's window. Open-ended rates (null
+        // valid_to) must be clipped too when the agreement ends inside the
+        // period — otherwise an old agreement's open-ended rate (common for
+        // standing charges) extends to Infinity and, being sorted first,
+        // shadows the newer agreement's rates. The final agreement's
+        // open-ended rates stay open-ended.
+        const fromMs = new Date(clampedFrom).getTime();
+        const toMs = new Date(clampedTo).getTime();
+        const endsInPeriod = toMs < new Date(periodTo).getTime();
         return rates.map(r => ({
           ...r,
-          valid_from: r.valid_from && new Date(r.valid_from).getTime() < new Date(clampedFrom).getTime()
-            ? clampedFrom : r.valid_from,
-          valid_to: r.valid_to && new Date(r.valid_to).getTime() > new Date(clampedTo).getTime()
-            ? clampedTo : r.valid_to,
+          valid_from: !r.valid_from || new Date(r.valid_from).getTime() < fromMs ? clampedFrom : r.valid_from,
+          valid_to: r.valid_to
+            ? (new Date(r.valid_to).getTime() > toMs ? clampedTo : r.valid_to)
+            : (endsInPeriod ? clampedTo : null),
         }));
       } catch {
         return [];
