@@ -335,23 +335,108 @@ function makeDowTick(data: { date: string; dow: string }[]) {
   };
 }
 
+/** Shift a YYYY-MM-DD key by N days (local calendar arithmetic, DST-safe). */
+function shiftDayKey(key: string, days: number): string {
+  const [y, m, d] = key.split('-').map(Number);
+  return localDateKey(new Date(y, m - 1, d + days, 12));
+}
+
+/** Shift a YYYY-MM key by N months. */
+function shiftMonthKey(key: string, months: number): string {
+  const [y, m] = key.split('-').map(Number);
+  const d = new Date(y, m - 1 + months, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** Map a current-period bucket key to the equivalent prior-period bucket key.
+ *  Monthly: same calendar month one year earlier.
+ *  Daily: the day exactly `periodDays` earlier (prior window = the N days before current). */
+function priorKeyFor(currentKey: string, monthly: boolean, periodDays: number): string {
+  return monthly ? shiftMonthKey(currentKey, -12) : shiftDayKey(currentKey, -periodDays);
+}
+
 /** Merge current + prior period into a single chart dataset.
- *  Aligns by index offset (day 1 of current vs day 1 of prior) so that
- *  the x-axis label and dow come from the current period only.
+ *  Prior values are matched to current buckets by calendar offset (not array
+ *  position), so gaps in prior data don't shift bars onto the wrong period.
  *  The chart always has exactly current.length entries. */
 function mergePeriodsForChart(
   current: ReturnType<typeof aggregateByDay>,
   prior: ReturnType<typeof aggregateByDay>,
-  currentLabel: string,
-  priorLabel: string
+  monthly: boolean,
+  periodDays: number,
 ) {
-  return current.map((c, i) => ({
-    date: c.date,
-    dow: c.dow,
-    dateKey: c.dateKey,
-    [currentLabel]: c.kWh,
-    [priorLabel]: prior[i]?.kWh ?? null,
-  }));
+  const priorByKey = new Map(prior.map(p => [p.dateKey, p.kWh]));
+  return current.map(c => {
+    const priorKey = priorKeyFor(c.dateKey, monthly, periodDays);
+    return {
+      date: c.date,
+      dow: c.dow,
+      dateKey: c.dateKey,
+      priorKey,
+      current: c.kWh,
+      prior: priorByKey.get(priorKey) ?? null,
+    };
+  });
+}
+
+/** Sum consumption per local day. */
+function dailyTotals(consumption: ConsumptionResult[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const item of consumption) {
+    const key = localDateKey(new Date(item.interval_start));
+    out.set(key, (out.get(key) ?? 0) + item.consumption);
+  }
+  return out;
+}
+
+interface LikeForLike {
+  currentKwh: number;
+  priorKwh: number;
+  currentCostPence: number | null;
+  priorCostPence: number | null;
+  /** Days present in both periods */
+  overlapDays: number;
+  /** Days with data in the current period */
+  currentDays: number;
+}
+
+/** Compare only days that have data in BOTH periods (current day D vs prior day D - periodDays).
+ *  Prevents a sparse prior period (e.g. meter installed mid-window) from producing
+ *  wildly inflated deltas. */
+function computeLikeForLike(
+  current: ConsumptionResult[],
+  prior: ConsumptionResult[],
+  periodDays: number,
+  currentDailyCosts: Record<string, number>,
+  priorDailyCosts: Record<string, number>,
+  haveCosts: boolean,
+): LikeForLike {
+  const cur = dailyTotals(current);
+  const pr = dailyTotals(prior);
+  let currentKwh = 0, priorKwh = 0, curCost = 0, prCost = 0, overlapDays = 0;
+  let costsComplete = haveCosts;
+  for (const [day, kwh] of cur) {
+    const priorDay = shiftDayKey(day, -periodDays);
+    const pKwh = pr.get(priorDay);
+    if (pKwh === undefined) continue;
+    overlapDays++;
+    currentKwh += kwh;
+    priorKwh += pKwh;
+    if (costsComplete) {
+      const c = currentDailyCosts[day];
+      const p = priorDailyCosts[priorDay];
+      if (c === undefined || p === undefined) costsComplete = false;
+      else { curCost += c; prCost += p; }
+    }
+  }
+  return {
+    currentKwh,
+    priorKwh,
+    currentCostPence: costsComplete && overlapDays > 0 ? curCost : null,
+    priorCostPence: costsComplete && overlapDays > 0 ? prCost : null,
+    overlapDays,
+    currentDays: cur.size,
+  };
 }
 
 /** Compute cost (pence) per aggregated period (day or month) from consumption + rates.
@@ -761,7 +846,7 @@ const MeterPanel = React.memo(function MeterPanel({
   data: MeterData;
   timeframe: Timeframe;
 }) {
-  const { meter, current, prior, currentCost, priorCost, loading, error,
+  const { meter, current, prior, currentCost, loading, error,
     currentUnitRates, currentStandingRates, priorUnitRates, priorStandingRates } = data;
   const useMonthly = timeframe === '1year';
 
@@ -784,25 +869,48 @@ const MeterPanel = React.memo(function MeterPanel({
     [prior, priorUnitRates, priorStandingRates, useMonthly]
   );
 
+  const periodDays = timeframeDays(timeframe);
+
   const chartData = useMemo(
-    () => mergePeriodsForChart(currentAgg, priorAgg, 'current', 'prior').map(d => ({
+    () => mergePeriodsForChart(currentAgg, priorAgg, useMonthly, periodDays).map(d => ({
       ...d,
       currentCost: currentCosts[d.dateKey] ?? null,
-      priorCost: priorCosts[d.dateKey] ?? null,
+      priorCost: priorCosts[d.priorKey] ?? null,
     })),
-    [currentAgg, priorAgg, currentCosts, priorCosts]
+    [currentAgg, priorAgg, currentCosts, priorCosts, useMonthly, periodDays]
+  );
+
+  // Daily cost maps for the like-for-like comparison (independent of chart granularity)
+  const currentDailyCosts = useMemo(
+    () => useMonthly ? computePeriodCosts(current, currentUnitRates, currentStandingRates, false) : currentCosts,
+    [useMonthly, current, currentUnitRates, currentStandingRates, currentCosts]
+  );
+  const priorDailyCosts = useMemo(
+    () => useMonthly ? computePeriodCosts(prior, priorUnitRates, priorStandingRates, false) : priorCosts,
+    [useMonthly, prior, priorUnitRates, priorStandingRates, priorCosts]
   );
 
   const currentKwh = useMemo(() => current.reduce((s, r) => s + r.consumption, 0), [current]);
-  const priorKwh = useMemo(() => prior.reduce((s, r) => s + r.consumption, 0), [prior]);
-  const kwhDelta = priorKwh > 0 ? currentKwh - priorKwh : null;
-  const kwhDeltaPct = priorKwh > 0 ? (kwhDelta! / priorKwh) * 100 : null;
 
-  const costDelta = currentCost && priorCost
-    ? currentCost.totalCostPence - priorCost.totalCostPence
+  const lfl = useMemo(
+    () => computeLikeForLike(
+      current, prior, periodDays, currentDailyCosts, priorDailyCosts,
+      currentUnitRates.length > 0 && priorUnitRates.length > 0,
+    ),
+    [current, prior, periodDays, currentDailyCosts, priorDailyCosts, currentUnitRates, priorUnitRates]
+  );
+
+  const kwhDelta = lfl.priorKwh > 0 ? lfl.currentKwh - lfl.priorKwh : null;
+  const kwhDeltaPct = lfl.priorKwh > 0 ? (kwhDelta! / lfl.priorKwh) * 100 : null;
+
+  const costDelta = lfl.currentCostPence !== null && lfl.priorCostPence !== null
+    ? lfl.currentCostPence - lfl.priorCostPence
     : null;
 
-  const hasPrior = prior.length > 0;
+  // Partial comparison = prior data covers noticeably less than the current period
+  const isPartialComparison = lfl.currentDays > 0 && lfl.overlapDays < lfl.currentDays * 0.9;
+
+  const hasPrior = lfl.overlapDays > 0;
 
   return (
     <div className="panel flex-col gap-3">
@@ -873,6 +981,9 @@ const MeterPanel = React.memo(function MeterPanel({
                 }
                 sub={kwhDeltaPct !== null
                   ? `${Math.abs(kwhDeltaPct).toFixed(0)}% ${kwhDeltaPct > 0 ? 'more' : 'less'} kWh`
+                    + (isPartialComparison
+                      ? ` · like-for-like over ${lfl.overlapDays} of ${lfl.currentDays} days (prior data incomplete)`
+                      : '')
                   : undefined}
                 delta={{
                   value: costDelta !== null
@@ -1139,13 +1250,12 @@ export function Dashboard({ api }: DashboardProps) {
         const priorFrom = new Date(priorTo.getFullYear(), priorTo.getMonth(), priorTo.getDate() - days);
         const latestDate = latestDay;
 
+        // Query every serial on the meter point (active first) so history from a
+        // replaced meter is included; duplicates are resolved in favour of the active serial.
+        const serialOrder = [meter.activeSerial, ...meter.serials.filter(s => s !== meter.activeSerial)];
         const [currentData, priorData] = await Promise.all([
-          meter.fuelType === 'electricity'
-            ? api.getElectricityConsumption(meter.id, meter.activeSerial, currentFrom.toISOString(), currentTo.toISOString())
-            : api.getGasConsumption(meter.id, meter.activeSerial, currentFrom.toISOString(), currentTo.toISOString()),
-          meter.fuelType === 'electricity'
-            ? api.getElectricityConsumption(meter.id, meter.activeSerial, priorFrom.toISOString(), priorTo.toISOString())
-            : api.getGasConsumption(meter.id, meter.activeSerial, priorFrom.toISOString(), priorTo.toISOString()),
+          api.getConsumptionAcrossSerials(meter.fuelType, meter.id, serialOrder, currentFrom.toISOString(), currentTo.toISOString()),
+          api.getConsumptionAcrossSerials(meter.fuelType, meter.id, serialOrder, priorFrom.toISOString(), priorTo.toISOString()),
         ]);
 
         // Compute costs using historical agreements for each portion of the period

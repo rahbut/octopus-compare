@@ -343,6 +343,42 @@ export class OctopusApi {
   }
 
   /**
+   * Fetch consumption for a meter point across several serials and merge.
+   * `serials` must be preference-ordered (active first): when two serials report
+   * the same interval, the earlier serial wins. The first serial's errors propagate;
+   * errors on secondary (historic) serials are ignored.
+   */
+  async getConsumptionAcrossSerials(
+    fuelType: 'electricity' | 'gas',
+    id: string,
+    serials: string[],
+    periodFrom: string,
+    periodTo: string,
+  ): Promise<ConsumptionResult[]> {
+    const fetchOne = (serial: string) => fuelType === 'electricity'
+      ? this.getElectricityConsumption(id, serial, periodFrom, periodTo)
+      : this.getGasConsumption(id, serial, periodFrom, periodTo);
+
+    const [primary, ...rest] = serials;
+    const results = await Promise.all([
+      fetchOne(primary),
+      ...rest.map(s => fetchOne(s).catch(() => [] as ConsumptionResult[])),
+    ]);
+
+    const seen = new Set<number>();
+    const merged: ConsumptionResult[] = [];
+    for (const list of results) {
+      for (const r of list) {
+        const ts = new Date(r.interval_start).getTime();
+        if (seen.has(ts)) continue;
+        seen.add(ts);
+        merged.push(r);
+      }
+    }
+    return merged.sort((a, b) => new Date(b.interval_start).getTime() - new Date(a.interval_start).getTime());
+  }
+
+  /**
    * Find the active serial number for a meter point by trying each listed serial
    * in order of preference (settlement register with a named rate first) and
    * returning the first one that actually has consumption data.
